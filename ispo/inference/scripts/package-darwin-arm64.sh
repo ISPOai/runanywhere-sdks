@@ -3,7 +3,7 @@ set -euo pipefail
 
 readonly repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)"
 readonly preset="ispo-darwin-arm64-inference-release"
-readonly version="0.20.31-ispo.2"
+readonly version="0.20.31-ispo.3"
 readonly output_dir="${ISPO_ARTIFACT_OUTPUT:-$repo_root/dist/ispo-local-inference}"
 readonly stage_dir="$output_dir/ispo-local-inference-darwin-arm64-$version"
 readonly archive="$output_dir/ispo-local-inference-darwin-arm64-$version.zip"
@@ -172,6 +172,7 @@ const sourceInputs = [
   'ispo/inference/scripts/fetch-cyclonedx-1.5-schema.sh',
   'ispo/inference/scripts/fetch-smoke-fixture.sh',
   'ispo/inference/scripts/package-darwin-arm64.sh',
+  'ispo/inference/scripts/run-fresh-smoke-series.sh',
   'ispo/inference/scripts/run-smoke.js',
   'ispo/inference/scripts/validate-cyclonedx-sbom.js',
   'ispo/inference/fixtures/tinyllama-15m-stories-q2-k.json',
@@ -202,6 +203,7 @@ const inputManifest = {
   artifact: '@ispo/runanywhere-local-inference',
   version: artifactVersion,
   forkHead: output('git', ['-C', repositoryRoot, 'rev-parse', 'HEAD']),
+  phase11Base: '70877eb0a3281ae5f5ddad0fa48d60e749746083',
   adoptedUpstream: '00e879fa818111054c02c8ad1f1a0398a4738f92',
   llamaCpp: {
     repository: 'https://github.com/RunanywhereAI/llama.cpp.git',
