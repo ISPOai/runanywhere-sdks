@@ -73,7 +73,7 @@ before producing any package or artifact.
 | Input | Pin |
 | --- | --- |
 | RunAnywhere source | Git commit `00e879fa818111054c02c8ad1f1a0398a4738f92` |
-| llama.cpp source | `https://github.com/RunanywhereAI/llama.cpp.git` at `runanywhere-b10453.4` (from `core/VERSIONS`) |
+| llama.cpp source | `https://github.com/RunanywhereAI/llama.cpp.git` tag `runanywhere-b10453.4`, resolved in the Phase 0 public build to commit `79e2eb5eef131799ca6a2e2e342056a37a148df8` |
 | Node N-API source dependencies | `node-addon-api` `8.9.0`; `node-api-headers` `1.9.0` (from `bindings/electron/native/package-lock.json`) |
 | Electron source dependency lock | Electron `43.1.1`; TypeScript `5.9.3` (from `bindings/electron/package-lock.json`) |
 | Public-source proof flags | `RAC_BUILD_BACKENDS=ON`, `RAC_BACKEND_LLAMACPP=ON`, `RAC_BUILD_ELECTRON_ADDON=ON`, `RAC_DESKTOP_ADAPTER=OFF`, `RAC_BUILD_SERVER=OFF`, `RAC_BUILD_PLATFORM=OFF`, `RAC_BACKEND_RAG=OFF`, `RAC_STATIC_PLUGINS=ON`, `GGML_METAL=OFF`, `RAC_GPU_VULKAN=OFF` |
@@ -81,6 +81,19 @@ before producing any package or artifact.
 These proof flags are not the Phase 1 hardened CMake preset. Phase 1 owns the
 shipping preset, Metal enablement, resource packaging, and sealed-runtime
 settings.
+
+## Phase 0 public build evidence
+
+A fresh sparse public clone of `origin/ispo/main` at
+`5b98189417b0b0ed6c84b6c5233a50976489918f` configured and built
+`runanywhere_native` on Darwin ARM64 with CMake `4.4.3`, Ninja `1.13.2`, Xcode
+`26.2`, and Node `22.23.1`. The commands used an empty environment containing
+only a scratch `HOME`, `PATH`, and `LANG`; no RunAnywhere token, control-plane
+URL, private engine pack, or vendor-only runner was supplied. The configure
+selected llama.cpp commit `79e2eb5eef131799ca6a2e2e342056a37a148df8` and
+completed with the public-source flags above. The verification output was a
+non-shipped `runanywhere_native.node` Mach-O arm64 file with SHA-256
+`71c9c4e22bca06ff6d5567f11fb18561f4ba9bf9befa37d4f09eebf66afdc938`.
 
 ## Shipped artifacts
 
