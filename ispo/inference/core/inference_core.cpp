@@ -16,18 +16,21 @@ namespace {
 constexpr uint32_t kMaximumContextTokens = 4096;
 constexpr uint32_t kMaximumGeneratedTokens = 256;
 
-bool has_metal_device() {
-    return ggml_backend_dev_by_type(GGML_BACKEND_DEVICE_TYPE_GPU) != nullptr;
+bool metal_is_compiled() {
+    return ggml_backend_reg_by_name("MTL") != nullptr;
 }
 
-bool has_usable_metal_device() {
+bool probe_metal_backend() {
     const ggml_backend_dev_t device = ggml_backend_dev_by_type(GGML_BACKEND_DEVICE_TYPE_GPU);
     if (device == nullptr) {
         return false;
     }
-    ggml_backend_dev_props properties{};
-    ggml_backend_dev_get_props(device, &properties);
-    return properties.device_id != nullptr && properties.memory_total > 0;
+    ggml_backend_t probe = ggml_backend_dev_init(device, nullptr);
+    if (probe == nullptr) {
+        return false;
+    }
+    ggml_backend_free(probe);
+    return true;
 }
 
 std::vector<llama_token> tokenize(const llama_vocab* vocab, const std::string& prompt) {
@@ -74,11 +77,17 @@ void InferenceCore::initialize(bool force_cpu) {
         backend_initialized_ = true;
     }
     force_cpu_ = force_cpu;
+    metal_probe_succeeded_ = !force_cpu_ && metal_is_compiled() && probe_metal_backend();
 }
 
 bool InferenceCore::metal_compiled() const {
     std::lock_guard lock(mutex_);
-    return backend_initialized_ && has_metal_device();
+    return backend_initialized_ && metal_is_compiled();
+}
+
+bool InferenceCore::metal_initialized() const {
+    std::lock_guard lock(mutex_);
+    return metal_probe_succeeded_;
 }
 
 bool InferenceCore::loaded() const {
@@ -106,26 +115,32 @@ void InferenceCore::load_exact_local_model(const std::string& path, const LoadOp
     release_model_locked();
     cancel_requested_.store(false);
 
-    const bool try_metal = !force_cpu_ && has_usable_metal_device();
-    llama_model_params model_params = llama_model_default_params();
-    model_params.n_gpu_layers = try_metal ? -1 : 0;
     ggml_backend_dev_t cpu_devices[] = {ggml_backend_dev_by_type(GGML_BACKEND_DEVICE_TYPE_CPU), nullptr};
-    if (!try_metal && cpu_devices[0] == nullptr) {
+    const ggml_backend_dev_t metal_device = ggml_backend_dev_by_type(GGML_BACKEND_DEVICE_TYPE_GPU);
+    ggml_backend_dev_t metal_devices[] = {metal_device, cpu_devices[0], nullptr};
+    if (cpu_devices[0] == nullptr) {
         throw std::runtime_error("CPU backend is unavailable");
     }
-    if (!try_metal) {
-        model_params.devices = cpu_devices;
-    }
-    model_ = llama_model_load_from_file(path.c_str(), model_params);
+
+    const bool try_metal = !force_cpu_ && metal_probe_succeeded_ && metal_device != nullptr;
+    const auto load_model = [&](bool use_metal) -> llama_model* {
+        if (use_metal && options.inject_metal_failure_for_test) {
+            return nullptr;
+        }
+        llama_model_params params = llama_model_default_params();
+        params.n_gpu_layers = use_metal ? -1 : 0;
+        params.devices = use_metal ? metal_devices : cpu_devices;
+        return llama_model_load_from_file(path.c_str(), params);
+    };
+
+    model_ = load_model(try_metal);
     backend_ = try_metal ? Backend::kMetal : Backend::kCpu;
 
     // Model or context construction can fail after Metal has registered but before
     // usable buffers exist. Retry with no GPU layers so a real CPU/Accelerate path
     // remains available rather than reporting a fictional Metal capability.
     if (model_ == nullptr && try_metal) {
-        model_params.n_gpu_layers = 0;
-        model_params.devices = cpu_devices;
-        model_ = llama_model_load_from_file(path.c_str(), model_params);
+        model_ = load_model(false);
         backend_ = Backend::kCpu;
     }
     if (model_ == nullptr) {
@@ -145,9 +160,7 @@ void InferenceCore::load_exact_local_model(const std::string& path, const LoadOp
     if (context_ == nullptr && backend_ == Backend::kMetal) {
         llama_model_free(model_);
         model_ = nullptr;
-        model_params.n_gpu_layers = 0;
-        model_params.devices = cpu_devices;
-        model_ = llama_model_load_from_file(path.c_str(), model_params);
+        model_ = load_model(false);
         backend_ = Backend::kCpu;
         context_params.offload_kqv = false;
         context_params.op_offload = false;

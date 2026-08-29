@@ -11,7 +11,8 @@ set(ISPO_INFERENCE_LLAMA_ARCHIVE_SHA256
 set(ISPO_INFERENCE_LLAMA_PATCH
     "${CMAKE_CURRENT_SOURCE_DIR}/patches/llama-static-backend-registry.patch")
 
-if(DEFINED FETCHCONTENT_SOURCE_DIR_ISPO_LLAMACPP)
+if(DEFINED FETCHCONTENT_SOURCE_DIR_ISPO_LLAMACPP AND
+   NOT "${FETCHCONTENT_SOURCE_DIR_ISPO_LLAMACPP}" STREQUAL "")
     message(FATAL_ERROR "Local llama.cpp source overrides are not permitted for the ISPO artifact")
 endif()
 
@@ -30,6 +31,8 @@ set(GGML_METAL ON CACHE BOOL "" FORCE)
 set(GGML_METAL_EMBED_LIBRARY ON CACHE BOOL "" FORCE)
 set(GGML_ACCELERATE ON CACHE BOOL "" FORCE)
 set(GGML_BACKEND_DL OFF CACHE BOOL "" FORCE)
+set(GGML_ISPO_STATIC_ONLY ON CACHE BOOL "" FORCE)
+set(ISPO_LLAMA_ONLY ON CACHE BOOL "" FORCE)
 set(GGML_CPU_ALL_VARIANTS OFF CACHE BOOL "" FORCE)
 set(GGML_NATIVE OFF CACHE BOOL "" FORCE)
 set(GGML_VULKAN OFF CACHE BOOL "" FORCE)
@@ -59,6 +62,8 @@ foreach(_ispo_llama_target IN ITEMS llama ggml ggml-base ggml-cpu ggml-blas ggml
             "-ffile-prefix-map=${ispo_llamacpp_SOURCE_DIR}=third_party/llama.cpp")
     endif()
 endforeach()
+target_compile_definitions(llama PRIVATE ISPO_LLAMA_ONLY)
+target_compile_definitions(ggml-metal PRIVATE GGML_ISPO_STATIC_ONLY)
 
 set(_ispo_napi_dir "${CMAKE_SOURCE_DIR}/bindings/electron/native/node_modules")
 if(NOT EXISTS "${_ispo_napi_dir}/node-addon-api/napi.h")

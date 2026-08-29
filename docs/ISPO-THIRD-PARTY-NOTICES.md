@@ -17,14 +17,24 @@ inference slice. It supplements, and never replaces, the complete upstream
 
 ## Phase 1 test fixture
 
-`stories15M-q4_0.gguf` is a test-only GGUF fixture from `ggml-org/models-moved`,
-immutable source revision `499bc8821c6b12b4e53c5bffcb21ec206f212d81`,
-SHA-256 `66967fbece6dbe97886593fdbb73589584927e29119ec31f08090732d1861739`.
-The pinned source has no license metadata or LICENSE file, so its license is
-explicitly **unverified**. It may be fetched only by the explicit verification
-helper; it is not shipped, redistributed, or admitted to runtime use until a
-separate authoritative model-license record exists.
+`tinyllama-15M-stories-Q2_K.gguf` is a test-only GGUF fixture from
+`tensorblock/tinyllama-15M-stories-GGUF`, immutable source revision
+`227c5a5ad3c1a830901543cf9959c53572014a68`, SHA-256
+`f7e39dc9f26f3d39bf59e885349c6eec65880f685322d591f53e6cdb46ceb2e9`.
+The immutable `README.md` model card at that exact revision declares
+`license: mit`; its SHA-256 is
+`904844774ca757e910ac26d8bbf550e574946ee4a72ba99b17f986a4ea75e315`.
+The repository has no separate `LICENSE` file at that revision. The fork
+therefore records the authoritative model-card declaration and preserves the
+MIT terms independently in
+`ispo/inference/fixtures/TINYLLAMA-15M-STORIES-MIT.txt`.
+
+The helper fetches this input only when a verifier invokes it explicitly,
+checks both the immutable model-card and model hashes, and is never linked into
+or called by runtime code. The runtime package does not contain the model
+bytes. Its notice bundle carries `TINYLLAMA-15M-STORIES-MIT.txt` as a
+separate model-license record; runtime-license obligations do not admit,
+download, or redistribute a model.
 
 The Phase 1 package script creates the artifact-specific notice bundle and
-records its SHA-256 entries in `metadata/artifact-manifest.sha256`. The runtime
-artifact never includes the fixture; model-license admission remains separate.
+records its SHA-256 entries in `metadata/artifact-manifest.sha256`.

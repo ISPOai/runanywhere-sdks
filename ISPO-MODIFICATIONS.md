@@ -75,7 +75,7 @@ N-API source package:
 
 | Path | ISPO package name | Version | Publication state |
 | --- | --- | --- | --- |
-| `bindings/electron/native` | `@ispo/runanywhere-local-inference-native` | `0.20.31-ispo.0` | private; never publish from Phase 0 |
+| `bindings/electron/native` | `@ispo/runanywhere-local-inference-native` | `0.20.31-ispo.2` | private; never publish from Phase 0/1 |
 
 The future host-private runtime artifact is reserved as
 `@ispo/runanywhere-local-inference` with an ISPO prerelease or release version
@@ -197,54 +197,64 @@ download/HF-cache/cloud paths described above.
 
 ## Shipped artifacts
 
-| Artifact | SHA-256 | Status |
-| --- | --- | --- |
-| Darwin ARM64 native addon | Pending — not yet produced; Phase 1 owns the artifact | Not shipped |
-| Darwin ARM64 runtime libraries | Pending — not yet produced; Phase 1 owns the artifact | Not shipped |
-| Embedded Metal resources | Pending — not yet produced; Phase 1 owns the artifact | Not shipped |
-| Artifact manifest | Pending — not yet produced; Phase 1 owns the artifact | Not shipped |
+The Phase 1 package layout is `ispo-local-inference-darwin-arm64-0.20.31-ispo.2/`: one native addon in `native/`, embedded Metal shaders inside that Mach-O, no third-party dylibs, notices in `notices/`, and input/SBOM/hash records in `metadata/`. It is an input suitable for later nested desktop signing; this script signs only the native addon and never publishes a package or release.
 
-Before any artifact is released, replace each pending entry with the exact
-input pin, output filename, SHA-256, build command, and verification result.
+`metadata/artifact-manifest.sha256` hashes every staged file except itself. The `.zip.sha256` is adjacent to, not inside, the archive, so the archive hash is non-circular. Secure timestamping makes an official Developer ID archive time-bearing; byte-identical reproducibility is instead proven on the unsigned addon and separately named ad-hoc development archive, while the official archive has deterministic layout and a strict signature gate.
 
-## Phase 1 artifact recipe
+## Phase 1 artifact recipe and gate
 
-The artifact identity is `@ispo/runanywhere-local-inference@0.20.31-ispo.1`.
-It is a host-internal N-API module, not an Electron preload/renderer/global
-surface. Its only exports are `initialize`, `capabilities`,
-`loadExactLocalModel`, `complete`, `stream`, `cancel`, `unload`, `metrics`,
-`reset`, and `shutdown`.
+The artifact identity is `@ispo/runanywhere-local-inference@0.20.31-ispo.2`. It is a host-internal N-API module, not an Electron preload/renderer/global surface. Its only exports are `initialize`, `capabilities`, `loadExactLocalModel`, `complete`, `stream`, `cancel`, `unload`, `metrics`, `reset`, and `shutdown`.
 
-The selected source slice fetches only the pinned public llama.cpp commit
-`79e2eb5eef131799ca6a2e2e342056a37a148df8`, enables embedded Metal shaders
-and Accelerate, and uses CPU/Accelerate if Metal has no usable device or context
-initialization fails. It sets `RAC_DESKTOP_ADAPTER=OFF`; no inherited core
-target is configured. llama.cpp HTTP, RPC, curl, server, examples, and tests
-are disabled.
+The selected source slice fetches only the public llama.cpp commit `79e2eb5eef131799ca6a2e2e342056a37a148df8`, archive SHA-256 `67d40b994c948d6536c50a1fe613cc0e4710af2567667344011a40f4dcbe72e9`, and applies `llama-static-backend-registry.patch`, SHA-256 `cf94d1a767693a88d29e5f68340970452d87dc6bceb1d4bf52a17886fbcb6200`. It removes `ggml-backend-dl.cpp` from the selected target and compiles a static CPU/Accelerate/Metal registry only.
+
+The release preset has `RAC_DESKTOP_ADAPTER=OFF`; inherited core, cloud/control-plane, telemetry, Connect, model downloads, NeuRT, QHexRT, ONNX, Sherpa, server, examples, tests, HTTP, RPC, curl, and unused engines are not configured. It embeds Metal shaders. An actual GPU backend probe plus model/context fallback decides the reported backend; an injected post-probe Metal model-load failure is a deterministic CPU/Accelerate fallback test seam.
+
+The test-only fixture is `tinyllama-15M-stories-Q2_K.gguf`, source revision `227c5a5ad3c1a830901543cf9959c53572014a68`, SHA-256 `f7e39dc9f26f3d39bf59e885349c6eec65880f685322d591f53e6cdb46ceb2e9`. Its immutable model card has SHA-256 `904844774ca757e910ac26d8bbf550e574946ee4a72ba99b17f986a4ea75e315` and declares `license: mit`. The model-card declaration and MIT terms are preserved in `TINYLLAMA-15M-STORIES-MIT.txt`; model bytes are explicit test input only, never a runtime download or model-admission decision.
+
+The package validates generated CycloneDX 1.5 SBOMs with the official schema tag `1.5`, commit `c320fc0f0b46873864927d9d5684eea7ba439728`: BOM SHA-256 `067f7824b08653839ea050ae9e09ca48375eadc2652b0e2a299476e7db90335b`, SPDX companion SHA-256 `4f6e2b05c05d26a4f2dc5879fbc2fca94b0a28db46289d0c51345621b71cfbfc`, and JSON-signature companion SHA-256 `8bae002c25e723db7ee1f26afde680ae1a2b1a8f6b4b4b0fd65dc3becb090aae`. Schema/test dependencies, every compiled/runtime/test input, and license hashes are recorded in `metadata/input-manifest.json`. CycloneDX components use supported `hashes` and `properties`, never npm-only `integrity`.
+
+From a clean public checkout, run the following in two independent scratch roots and compare the unsigned addon hashes:
 
 ```sh
-cd bindings/electron/native
-npm ci --ignore-scripts --cache /private/tmp/ispo-phase1-npm-cache
-cd ../../..
-cmake --preset ispo-darwin-arm64-inference-release
-cmake --build --preset ispo-darwin-arm64-inference-release --parallel 4
-./ispo/inference/scripts/fetch-smoke-fixture.sh /private/tmp/ispo-fixtures/stories15M-q4_0.gguf
-node ispo/inference/scripts/run-smoke.js \
-  "$PWD/build/ispo-darwin-arm64-inference-release/ispo/inference/ispo_local_inference_native.node" \
-  /private/tmp/ispo-fixtures/stories15M-q4_0.gguf
+public_remote="https://github.com/ISPOai/runanywhere-sdks.git"
+head_ref="ispo/phase1-inference-artifact"
+for root in /private/tmp/ispo-phase1-a /private/tmp/ispo-phase1-b; do
+  git clone --branch "$head_ref" --single-branch "$public_remote" "$root"
+  (cd "$root/bindings/electron/native" &&
+    npm ci --ignore-scripts --cache /private/tmp/ispo-phase1-npm-cache)
+  (
+    cd "$root"
+    cmake --preset ispo-darwin-arm64-inference-release --fresh
+    cmake --build --preset ispo-darwin-arm64-inference-release --parallel 4
+    ./ispo/inference/scripts/audit-artifact.sh \
+      "$root/build/ispo-darwin-arm64-inference-release/ispo/inference/ispo_local_inference_native.node"
+    ./ispo/inference/scripts/fetch-smoke-fixture.sh \
+      /private/tmp/ispo-fixtures/tinyllama-15M-stories-Q2_K.gguf
+    ISPO_SMOKE_CYCLES=20 node ispo/inference/scripts/run-smoke.js \
+      "$root/build/ispo-darwin-arm64-inference-release/ispo/inference/ispo_local_inference_native.node" \
+      /private/tmp/ispo-fixtures/tinyllama-15M-stories-Q2_K.gguf
+  )
+done
+cmp \
+  /private/tmp/ispo-phase1-a/build/ispo-darwin-arm64-inference-release/ispo/inference/ispo_local_inference_native.node \
+  /private/tmp/ispo-phase1-b/build/ispo-darwin-arm64-inference-release/ispo/inference/ispo_local_inference_native.node
+```
+
+The smoke gate proves controlled JavaScript errors for URL, relative, missing, wrong-extension, unloaded, duplicate, cancellation, and shutdown cases; deterministic complete/stream token deltas and terminal metrics; repeated load/generate/cancel/unload/reset; bounded post-warmup RSS and clean process exit; positive Metal generation; explicit forced CPU/Accelerate; and the injected Metal-failure fallback.
+
+For a separately named ad-hoc development artifact only:
+
+```sh
+ISPO_ARTIFACT_OUTPUT=/private/tmp/ispo-phase1-development \
+  ./ispo/inference/scripts/package-development-darwin-arm64.sh
+```
+
+For an official release candidate, an explicitly supplied Developer ID identity is mandatory. The release script fails before build/output creation when absent, signs with `--timestamp --options runtime`, requires a TeamIdentifier, hardened-runtime flag, strict verification, and a secure timestamp, and has no ad-hoc fallback:
+
+```sh
+ISPO_ARTIFACT_OUTPUT=/private/tmp/ispo-phase1-release \
 ISPO_CODESIGN_IDENTITY='Developer ID Application: ISPO Labs, Inc (4L8CX8AY6M)' \
   ./ispo/inference/scripts/package-darwin-arm64.sh
 ```
 
-For a separately named ad-hoc development artifact only, run
-`./ispo/inference/scripts/package-development-darwin-arm64.sh`; the release
-script always requires an explicitly supplied identity, hardened runtime, and
-secure timestamp.
-
-The test-only `stories15M-q4_0.gguf` fixture is pinned in
-`ispo/inference/fixtures/stories15m-q4_0.json` to source revision
-`499bc8821c6b12b4e53c5bffcb21ec206f212d81` and SHA-256
-`66967fbece6dbe97886593fdbb73589584927e29119ec31f08090732d1861739`.
-Its license is unverified at that revision, so the fixture is not shipped,
-redistributed, or admitted for runtime use. The runtime has no fixture download
-code; model-license admission remains a separate host decision.
+The archive contains the addon, notices, model-license record, CycloneDX SBOM, SBOM-validation record, pinned input manifest, and non-circular artifact manifest. Do not merge until an independent exact-head review records the final refs and repeats these gates.

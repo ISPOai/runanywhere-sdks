@@ -1,0 +1,33 @@
+TinyLlama 15M Stories GGUF smoke fixture
+
+Source repository: tensorblock/tinyllama-15M-stories-GGUF
+Pinned revision: 227c5a5ad3c1a830901543cf9959c53572014a68
+Model file: tinyllama-15M-stories-Q2_K.gguf
+Model-card record: README.md
+Model-card SHA-256: 904844774ca757e910ac26d8bbf550e574946ee4a72ba99b17f986a4ea75e315
+
+The immutable model-card front matter at the pinned revision declares
+`license: mit`. The upstream repository has no separate LICENSE file at that
+revision. This file preserves the declared MIT terms separately from the
+runtime third-party notices. The model bytes are test-only and are not included
+in the ISPO runtime artifact.
+
+MIT License
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.

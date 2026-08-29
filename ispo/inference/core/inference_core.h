@@ -19,6 +19,7 @@ struct LoadOptions {
     uint32_t context_tokens = 512;
     int32_t threads = 0;
     bool force_cpu = false;
+    bool inject_metal_failure_for_test = false;
 };
 
 struct Metrics {
@@ -38,6 +39,7 @@ class InferenceCore {
 
     void initialize(bool force_cpu);
     [[nodiscard]] bool metal_compiled() const;
+    [[nodiscard]] bool metal_initialized() const;
     [[nodiscard]] bool loaded() const;
     [[nodiscard]] Backend backend() const;
     void load_exact_local_model(const std::string& path, const LoadOptions& options);
@@ -63,6 +65,7 @@ class InferenceCore {
     std::atomic<bool> cancel_requested_{false};
     std::atomic<bool> generating_{false};
     bool backend_initialized_ = false;
+    bool metal_probe_succeeded_ = false;
     bool force_cpu_ = false;
     Backend backend_ = Backend::kCpu;
     Metrics metrics_;

@@ -1,17 +1,200 @@
+diff --git a/ggml/src/CMakeLists.txt b/ggml/src/CMakeLists.txt
+index 82e9480c2..002cfcc27 100644
+--- a/ggml/src/CMakeLists.txt
++++ b/ggml/src/CMakeLists.txt
+@@ -242,3 +242,9 @@ endif()
+-add_library(ggml
+-            ggml-backend-dl.cpp
+-            ggml-backend-reg.cpp)
++if (GGML_ISPO_STATIC_ONLY)
++    add_library(ggml
++                ggml-backend-reg.cpp)
++    target_compile_definitions(ggml PUBLIC GGML_ISPO_STATIC_ONLY)
++else()
++    add_library(ggml
++                ggml-backend-dl.cpp
++                ggml-backend-reg.cpp)
++endif()
+diff --git a/ggml/src/ggml-backend-meta.cpp b/ggml/src/ggml-backend-meta.cpp
+index 7654ea1f3..8f8d8bbf3 100644
+--- a/ggml/src/ggml-backend-meta.cpp
++++ b/ggml/src/ggml-backend-meta.cpp
+@@ -6,0 +7 @@
++#include "ggml-ispo-sealed-env.h"
 diff --git a/ggml/src/ggml-backend-reg.cpp b/ggml/src/ggml-backend-reg.cpp
-index e595946..f220f68 100644
+index e59594670..f43f5fb06 100644
 --- a/ggml/src/ggml-backend-reg.cpp
 +++ b/ggml/src/ggml-backend-reg.cpp
-@@ -560,34 +560,12 @@ static ggml_backend_reg_t ggml_backend_load_best(const char * name, bool silent,
- }
- 
- void ggml_backend_load_all() {
+@@ -0,0 +1,163 @@
++#if defined(GGML_ISPO_STATIC_ONLY)
++
++#include "ggml-backend-impl.h"
++#include "ggml-backend.h"
++#include "ggml-impl.h"
++
++#include <algorithm>
++#include <cctype>
++#include <vector>
++
++#ifdef GGML_USE_BLAS
++#include "ggml-blas.h"
++#endif
++
++#ifdef GGML_USE_CPU
++#include "ggml-cpu.h"
++#endif
++
++#ifdef GGML_USE_METAL
++#include "ggml-metal.h"
++#endif
++
++namespace {
++
++struct ispo_backend_registry {
++    std::vector<ggml_backend_reg_t> backends;
++    std::vector<ggml_backend_dev_t> devices;
++
++    ispo_backend_registry() {
++#ifdef GGML_USE_METAL
++        register_backend(ggml_backend_metal_reg());
++#endif
++#ifdef GGML_USE_BLAS
++        register_backend(ggml_backend_blas_reg());
++#endif
++#ifdef GGML_USE_CPU
++        register_backend(ggml_backend_cpu_reg());
++#endif
++    }
++
++    void register_backend(ggml_backend_reg_t reg) {
++        if (reg == nullptr || std::find(backends.begin(), backends.end(), reg) != backends.end()) {
++            return;
++        }
++        backends.push_back(reg);
++        for (size_t index = 0; index < ggml_backend_reg_dev_count(reg); ++index) {
++            register_device(ggml_backend_reg_dev_get(reg, index));
++        }
++    }
++
++    void register_device(ggml_backend_dev_t device) {
++        if (device != nullptr && std::find(devices.begin(), devices.end(), device) == devices.end()) {
++            devices.push_back(device);
++        }
++    }
++};
++
++ispo_backend_registry & ispo_registry() {
++    static ispo_backend_registry registry;
++    return registry;
++}
++
++bool ispo_equals_ignore_case(const char * left, const char * right) {
++    while (*left != '\0' && *right != '\0') {
++        const auto lhs = static_cast<unsigned char>(*left);
++        const auto rhs = static_cast<unsigned char>(*right);
++        if (std::tolower(lhs) != std::tolower(rhs)) {
++            return false;
++        }
++        ++left;
++        ++right;
++    }
++    return *left == *right;
++}
++
++}  // namespace
++
++void ggml_backend_register(ggml_backend_reg_t reg) {
++    ispo_registry().register_backend(reg);
++}
++
++void ggml_backend_device_register(ggml_backend_dev_t device) {
++    ispo_registry().register_device(device);
++}
++
++size_t ggml_backend_reg_count() {
++    return ispo_registry().backends.size();
++}
++
++ggml_backend_reg_t ggml_backend_reg_get(size_t index) {
++    GGML_ASSERT(index < ggml_backend_reg_count());
++    return ispo_registry().backends[index];
++}
++
++ggml_backend_reg_t ggml_backend_reg_by_name(const char * name) {
++    for (const ggml_backend_reg_t reg : ispo_registry().backends) {
++        if (ispo_equals_ignore_case(ggml_backend_reg_name(reg), name)) {
++            return reg;
++        }
++    }
++    return nullptr;
++}
++
++size_t ggml_backend_dev_count() {
++    return ispo_registry().devices.size();
++}
++
++ggml_backend_dev_t ggml_backend_dev_get(size_t index) {
++    GGML_ASSERT(index < ggml_backend_dev_count());
++    return ispo_registry().devices[index];
++}
++
++ggml_backend_dev_t ggml_backend_dev_by_name(const char * name) {
++    for (const ggml_backend_dev_t device : ispo_registry().devices) {
++        if (ispo_equals_ignore_case(ggml_backend_dev_name(device), name)) {
++            return device;
++        }
++    }
++    return nullptr;
++}
++
++ggml_backend_dev_t ggml_backend_dev_by_type(enum ggml_backend_dev_type type) {
++    for (const ggml_backend_dev_t device : ispo_registry().devices) {
++        if (ggml_backend_dev_type(device) == type) {
++            return device;
++        }
++    }
++    return nullptr;
++}
++
++ggml_backend_t ggml_backend_init_by_name(const char * name, const char * params) {
++    const ggml_backend_dev_t device = ggml_backend_dev_by_name(name);
++    return device == nullptr ? nullptr : ggml_backend_dev_init(device, params);
++}
++
++ggml_backend_t ggml_backend_init_by_type(enum ggml_backend_dev_type type, const char * params) {
++    const ggml_backend_dev_t device = ggml_backend_dev_by_type(type);
++    return device == nullptr ? nullptr : ggml_backend_dev_init(device, params);
++}
++
++ggml_backend_t ggml_backend_init_best(void) {
++    const ggml_backend_dev_t accelerator = ggml_backend_dev_by_type(GGML_BACKEND_DEVICE_TYPE_GPU);
++    const ggml_backend_dev_t cpu =
++        accelerator == nullptr ? ggml_backend_dev_by_type(GGML_BACKEND_DEVICE_TYPE_CPU) : accelerator;
++    return cpu == nullptr ? nullptr : ggml_backend_dev_init(cpu, nullptr);
++}
++
++ggml_backend_reg_t ggml_backend_load(const char *) {
++    return nullptr;
++}
++
++void ggml_backend_unload(ggml_backend_reg_t) {}
++
++void ggml_backend_load_all() {
++    (void) ispo_registry();
++}
++
++void ggml_backend_load_all_from_path(const char *) {
++    (void) ispo_registry();
++}
++
++#else
++
+@@ -563 +726,3 @@ void ggml_backend_load_all() {
 -    ggml_backend_load_all_from_path(nullptr);
 +    // ISPO patch: this sealed static target registers only linked CPU/Metal
 +    // backends. It must not inspect executable paths or environment variables.
 +    (void) get_reg();
- }
- 
+@@ -566,27 +731,3 @@ void ggml_backend_load_all() {
 -void ggml_backend_load_all_from_path(const char * dir_path) {
 -#ifdef NDEBUG
 -    bool silent = true;
@@ -42,4 +225,422 @@ index e595946..f220f68 100644
 +void ggml_backend_load_all_from_path(const char *) {
 +    // ISPO patch: preserve ABI but prohibit dynamic backend discovery/loading.
 +    (void) get_reg();
- }
+@@ -593,0 +735,2 @@ void ggml_backend_load_all_from_path(const char * dir_path) {
++
++#endif
+diff --git a/ggml/src/ggml-backend.cpp b/ggml/src/ggml-backend.cpp
+index f6fb91798..f33598194 100644
+--- a/ggml/src/ggml-backend.cpp
++++ b/ggml/src/ggml-backend.cpp
+@@ -14,0 +15 @@
++#include "ggml-ispo-sealed-env.h"
+diff --git a/ggml/src/ggml-common.h b/ggml/src/ggml-common.h
+index 83f9118da..612e6fb64 100644
+--- a/ggml/src/ggml-common.h
++++ b/ggml/src/ggml-common.h
+@@ -34,37 +33,0 @@ typedef half2 ggml_half2;
+-#define GGML_COMMON_DECL
+-#elif defined(GGML_COMMON_DECL_CUDA)
+-#if defined(GGML_COMMON_DECL_MUSA)
+-#include <musa_fp16.h>
+-#else
+-#include <cuda_fp16.h>
+-#endif
+-#include <cstdint>
+-
+-typedef half  ggml_half;
+-typedef half2 ggml_half2;
+-
+-#define GGML_COMMON_AGGR_U
+-#define GGML_COMMON_AGGR_S data
+-
+-#define GGML_COMMON_DECL
+-#elif defined(GGML_COMMON_DECL_HIP)
+-#include <hip/hip_fp16.h>
+-#include <cstdint>
+-
+-typedef half  ggml_half;
+-typedef half2 ggml_half2;
+-
+-#define GGML_COMMON_AGGR_U
+-#define GGML_COMMON_AGGR_S data
+-
+-#define GGML_COMMON_DECL
+-#elif defined(GGML_COMMON_DECL_SYCL)
+-#include <sycl/half_type.hpp>
+-#include <cstdint>
+-
+-typedef sycl::half  ggml_half;
+-typedef sycl::half2 ggml_half2;
+-
+-#define GGML_COMMON_AGGR_U
+-#define GGML_COMMON_AGGR_S data
+-
+@@ -92,82 +54,0 @@ typedef sycl::half2 ggml_half2;
+-#if defined(GGML_COMMON_DECL_CUDA) || defined(GGML_COMMON_DECL_HIP) || defined(GGML_COMMON_DECL_SYCL)
+-// QR = QK / number of values before dequantization
+-// QI = number of 32 bit integers before dequantization
+-
+-#define QI1_0 (QK1_0 / 32)
+-#define QR1_0 1
+-
+-#define QI2_0 (QK2_0 / 32)
+-#define QR2_0 1
+-
+-
+-#define QI4_0 (QK4_0 / (4 * QR4_0))
+-#define QR4_0 2
+-
+-#define QI4_1 (QK4_1 / (4 * QR4_1))
+-#define QR4_1 2
+-
+-#define QI_MXFP4 (QK_MXFP4 / (4 * QR_MXFP4))
+-#define QR_MXFP4 2
+-
+-#define QI_NVFP4 (QK_NVFP4 / (4 * QR_NVFP4))
+-#define QR_NVFP4 2
+-
+-#define QI5_0 (QK5_0 / (4 * QR5_0))
+-#define QR5_0 2
+-
+-#define QI5_1 (QK5_1 / (4 * QR5_1))
+-#define QR5_1 2
+-
+-#define QI8_0 (QK8_0 / (4 * QR8_0))
+-#define QR8_0 1
+-
+-#define QI8_1 (QK8_1 / (4 * QR8_1))
+-#define QR8_1 1
+-
+-#define QI2_K (QK_K / (4*QR2_K))
+-#define QR2_K 4
+-
+-#define QI3_K (QK_K / (4*QR3_K))
+-#define QR3_K 4
+-
+-#define QI4_K (QK_K / (4*QR4_K))
+-#define QR4_K 2
+-
+-#define QI5_K (QK_K / (4*QR5_K))
+-#define QR5_K 2
+-
+-#define QI6_K (QK_K / (4*QR6_K))
+-#define QR6_K 2
+-
+-#define QI2_XXS (QK_K / (4*QR2_XXS))
+-#define QR2_XXS 4
+-
+-#define QI2_XS (QK_K / (4*QR2_XS))
+-#define QR2_XS 4
+-
+-#define QI2_S (QK_K / (4*QR2_S))
+-#define QR2_S 4
+-
+-#define QI3_XXS (QK_K / (4*QR3_XXS))
+-#define QR3_XXS 4
+-
+-#define QI3_XS (QK_K / (4*QR3_XS))
+-#define QR3_XS 4
+-
+-#define QI1_S (QK_K / (4*QR1_S))
+-#define QR1_S 8
+-
+-#define QI1_M (QK_K / (4*QR1_M))
+-#define QR1_M 8
+-
+-#define QI4_NL (QK4_NL / (4*QR4_NL))
+-#define QR4_NL 2
+-
+-#define QI4_XS (QK_K / (4*QR4_XS))
+-#define QR4_XS 2
+-
+-#define QI3_S (QK_K / (4*QR3_S))
+-#define QR3_S 4
+-
+-#endif // GGML_COMMON_DECL_CUDA || GGML_COMMON_DECL_HIP
+-
+@@ -489,15 +369,0 @@ static_assert(sizeof(block_iq4_xs) == sizeof(ggml_half) + sizeof(uint16_t) + QK_
+-#define GGML_COMMON_IMPL
+-#elif defined(GGML_COMMON_IMPL_CUDA) || defined(GGML_COMMON_IMPL_HIP) || defined(GGML_COMMON_IMPL_MUSA)
+-#include <cstdint>
+-
+-#define GGML_TABLE_BEGIN(type, name, size) static const __device__ type name[size] = {
+-#define GGML_TABLE_END() };
+-
+-#define GGML_COMMON_IMPL
+-#elif defined(GGML_COMMON_IMPL_SYCL)
+-
+-#include <cstdint>
+-
+-#define GGML_TABLE_BEGIN(type, name, size) static const type name[size] = {
+-#define GGML_TABLE_END() };
+-
+@@ -1125 +991 @@ GGML_TABLE_END()
+-// ref: https://www.opencompute.org/documents/ocp-microscaling-formats-mx-v1-0-spec-final-pdf
++// OCP microscaling format reference.
+diff --git a/ggml/src/ggml-cpu/ggml-cpu.c b/ggml/src/ggml-cpu/ggml-cpu.c
+index 87ac0a702..81f064d53 100644
+--- a/ggml/src/ggml-cpu/ggml-cpu.c
++++ b/ggml/src/ggml-cpu/ggml-cpu.c
+@@ -14,0 +15 @@
++#include "../ggml-ispo-sealed-env.h"
+diff --git a/private/tmp/runanywhere-phase1-repair.QQ5BsC/repo/build/ispo-darwin-arm64-inference-release/_deps/ispo_llamacpp-src/ggml/src/ggml-ispo-sealed-env.h b/ggml/src/ggml-ispo-sealed-env.h
+new file mode 100644
+index 000000000..0c6ad4b75
+--- /dev/null
++++ b/ggml/src/ggml-ispo-sealed-env.h
+@@ -0,0 +1,27 @@
++#pragma once
++
++// The sealed ISPO target deliberately has no process-environment configuration
++// surface. Keep upstream tuning and debug toggles compiled out instead of
++// letting them discover ambient process state.
++#ifdef __cplusplus
++#include <cstdlib>
++static inline char * ggml_ispo_sealed_getenv(const char *) {
++    return nullptr;
++}
++#else
++#include <stdlib.h>
++static inline char * ggml_ispo_sealed_getenv(const char * name) {
++    (void) name;
++    return NULL;
++}
++#endif
++
++static inline int ggml_ispo_sealed_setenv(const char * name, const char * value, int overwrite) {
++    (void) name;
++    (void) value;
++    (void) overwrite;
++    return 0;
++}
++
++#define getenv(name) ggml_ispo_sealed_getenv(name)
++#define setenv(name, value, overwrite) ggml_ispo_sealed_setenv(name, value, overwrite)
+diff --git a/ggml/src/ggml-metal/ggml-metal-context.m b/ggml/src/ggml-metal/ggml-metal-context.m
+index 32d97cd5d..71fafb469 100644
+--- a/ggml/src/ggml-metal/ggml-metal-context.m
++++ b/ggml/src/ggml-metal/ggml-metal-context.m
+@@ -8,0 +9 @@
++#include "../ggml-ispo-sealed-env.h"
+diff --git a/ggml/src/ggml-metal/ggml-metal-device.m b/ggml/src/ggml-metal/ggml-metal-device.m
+index a885715bf..e486cef35 100644
+--- a/ggml/src/ggml-metal/ggml-metal-device.m
++++ b/ggml/src/ggml-metal/ggml-metal-device.m
+@@ -5,0 +6 @@
++#include "../ggml-ispo-sealed-env.h"
+@@ -618 +619 @@ ggml_metal_rsets_t ggml_metal_rsets_init(ggml_metal_device_t dev) {
+-#if defined(GGML_METAL_HAS_RESIDENCY_SETS)
++#if defined(GGML_METAL_HAS_RESIDENCY_SETS) && !defined(GGML_ISPO_STATIC_ONLY)
+@@ -639 +640 @@ ggml_metal_rsets_t ggml_metal_rsets_init(ggml_metal_device_t dev) {
+-#if defined(GGML_METAL_HAS_RESIDENCY_SETS)
++#if defined(GGML_METAL_HAS_RESIDENCY_SETS) && !defined(GGML_ISPO_STATIC_ONLY)
+@@ -889,0 +891,3 @@ ggml_metal_device_t ggml_metal_device_init(int device) {
++#if defined(GGML_ISPO_STATIC_ONLY)
++            dev->props.max_working_set_size = dev->mtl_device.recommendedMaxWorkingSetSize;
++#else
+@@ -894,0 +899 @@ ggml_metal_device_t ggml_metal_device_init(int device) {
++#endif
+@@ -947,0 +953,3 @@ ggml_metal_device_t ggml_metal_device_init(int device) {
++#if defined(GGML_ISPO_STATIC_ONLY)
++            GGML_LOG_INFO("%s: recommendedMaxWorkingSetSize  = %8.2f MB\n", __func__, dev->props.max_working_set_size / 1e6);
++#else
+@@ -950,0 +959 @@ ggml_metal_device_t ggml_metal_device_init(int device) {
++#endif
+@@ -1079,0 +1089,4 @@ void ggml_metal_device_get_memory(ggml_metal_device_t dev, size_t * free, size_t
++#if defined(GGML_ISPO_STATIC_ONLY)
++    *total = dev->mtl_device.recommendedMaxWorkingSetSize;
++    *free  = *total - dev->mtl_device.currentAllocatedSize;
++#else
+@@ -1086,0 +1100 @@ void ggml_metal_device_get_memory(ggml_metal_device_t dev, size_t * free, size_t
++#endif
+@@ -1537,0 +1552,7 @@ static void ggml_metal_log_allocated_size(id<MTLDevice> device, size_t size_alig
++#if defined(GGML_ISPO_STATIC_ONLY)
++    GGML_LOG_DEBUG("%s: allocated buffer, size = %8.2f MiB, (%8.2f / %8.2f)\n",
++            __func__,
++            size_aligned / 1024.0 / 1024.0,
++            device.currentAllocatedSize / 1024.0 / 1024.0,
++            device.recommendedMaxWorkingSetSize / 1024.0 / 1024.0);
++#else
+@@ -1554,0 +1576 @@ static void ggml_metal_log_allocated_size(id<MTLDevice> device, size_t size_alig
++#endif
+@@ -1568 +1590 @@ static bool ggml_metal_buffer_rset_init(ggml_metal_buffer_t buf) {
+-#if defined(GGML_METAL_HAS_RESIDENCY_SETS)
++#if defined(GGML_METAL_HAS_RESIDENCY_SETS) && !defined(GGML_ISPO_STATIC_ONLY)
+@@ -1600 +1622 @@ static void ggml_metal_buffer_rset_free(ggml_metal_buffer_t buf) {
+-#if defined(GGML_METAL_HAS_RESIDENCY_SETS)
++#if defined(GGML_METAL_HAS_RESIDENCY_SETS) && !defined(GGML_ISPO_STATIC_ONLY)
+diff --git a/ggml/src/ggml-metal/ggml-metal-ops.cpp b/ggml/src/ggml-metal/ggml-metal-ops.cpp
+index b7f9b2d0d..ef7745b78 100644
+--- a/ggml/src/ggml-metal/ggml-metal-ops.cpp
++++ b/ggml/src/ggml-metal/ggml-metal-ops.cpp
+@@ -528,2 +528 @@ int ggml_metal_op_encode(ggml_metal_op_t ctx, int idx) {
+-        GGML_ABORT("fusion error: nodes spanning multiple encoders have been fused. this indicates a bug in the fusion logic %s",
+-                "https://github.com/ggml-org/llama.cpp/pull/14849");
++        GGML_ABORT("fusion error: nodes spanning multiple encoders have been fused");
+diff --git a/ggml/src/ggml-metal/ggml-metal.cpp b/ggml/src/ggml-metal/ggml-metal.cpp
+index ef3c92f27..64c4c3471 100644
+--- a/ggml/src/ggml-metal/ggml-metal.cpp
++++ b/ggml/src/ggml-metal/ggml-metal.cpp
+@@ -8,0 +9 @@
++#include "../ggml-ispo-sealed-env.h"
+@@ -916,0 +918 @@ ggml_backend_reg_t ggml_backend_metal_reg(void) {
++#if !defined(GGML_ISPO_STATIC_ONLY)
+@@ -920,0 +923 @@ ggml_backend_reg_t ggml_backend_metal_reg(void) {
++#endif
+@@ -925,2 +928,2 @@ ggml_backend_reg_t ggml_backend_metal_reg(void) {
+-            // workaround macOS limitation (kIOGPUCommandBufferCallbackErrorImpactingInteractivity) until proper fix becomes possible
+-            // ref: https://github.com/ggml-org/llama.cpp/issues/20141#issuecomment-4272947703
++#if !defined(GGML_ISPO_STATIC_ONLY)
++            // Retained upstream only for non-sealed builds.
+@@ -927,0 +931 @@ ggml_backend_reg_t ggml_backend_metal_reg(void) {
++#endif
+@@ -950,0 +955 @@ ggml_backend_reg_t ggml_backend_metal_reg(void) {
++#if !defined(GGML_ISPO_STATIC_ONLY)
+@@ -951,0 +957 @@ GGML_BACKEND_DL_IMPL(ggml_backend_metal_reg)
++#endif
+diff --git a/ggml/src/ggml-metal/ggml-metal.metal b/ggml/src/ggml-metal/ggml-metal.metal
+index 243c997fc..d03b2b359 100644
+--- a/ggml/src/ggml-metal/ggml-metal.metal
++++ b/ggml/src/ggml-metal/ggml-metal.metal
+@@ -30 +30 @@ using namespace metal;
+-// ref: https://developer.apple.com/metal/Metal-Shading-Language-Specification.pdf
++// Metal shading language reference.
+@@ -1082 +1082 @@ constant float SQRT_2_INV      = 0.70710678118654752440084436210484f;
+-// ref: https://www.johndcook.com/blog/python_erf/
++// Error-function approximation reference.
+@@ -2085 +2085 @@ kernel void kernel_soft_max(
+-    // ref: https://github.com/ggml-org/ggml/pull/621#discussion_r1425156335
++    // Keep this branch aligned with the scalar implementation.
+@@ -2193 +2193 @@ kernel void kernel_soft_max_4(
+-    // ref: https://github.com/ggml-org/ggml/pull/621#discussion_r1425156335
++    // Keep this branch aligned with the scalar implementation.
+@@ -4629 +4629 @@ static float rope_yarn_ramp(const float low, const float high, const int i0) {
+-// YaRN algorithm based on LlamaYaRNScaledRotaryEmbedding.py from https://github.com/jquesnelle/yarn
++// YaRN algorithm reference implementation.
+@@ -6015 +6015 @@ kernel void kernel_timestep_embedding_f32(
+-// bitonic sort implementation following the CUDA kernels as reference
++// Bitonic sort implementation reference.
+@@ -6456 +6456 @@ constant int32_t FC_flash_attn_ext_nsg  [[function_constant(FC_FLASH_ATTN_EXT +
+-// ref: https://arxiv.org/pdf/2307.08691.pdf
++// Attention scaling reference.
+@@ -9932 +9932 @@ void kernel_mul_mv_tq2_0_f32_impl(
+-    // ref: https://github.com/ggml-org/llama.cpp/pull/26980
++    // This fused path is intentionally local to the Metal implementation.
+diff --git a/ggml/src/ggml.c b/ggml/src/ggml.c
+index d0d369c41..36ae7c64e 100644
+--- a/ggml/src/ggml.c
++++ b/ggml/src/ggml.c
+@@ -8,0 +9 @@
++#include "ggml-ispo-sealed-env.h"
+@@ -171 +171,0 @@ void ggml_print_backtrace(void) {
+-        fprintf(stderr, "See: https://github.com/ggml-org/llama.cpp/pull/17869\n");
+diff --git a/ggml/src/ggml.cpp b/ggml/src/ggml.cpp
+index 0d388d455..27cc1cb90 100644
+--- a/ggml/src/ggml.cpp
++++ b/ggml/src/ggml.cpp
+@@ -1,0 +2 @@
++#include "ggml-ispo-sealed-env.h"
+diff --git a/src/CMakeLists.txt b/src/CMakeLists.txt
+index 39ba3061f..eb6ea7da8 100644
+--- a/src/CMakeLists.txt
++++ b/src/CMakeLists.txt
+@@ -9 +9,6 @@ llama_add_compile_flags()
+-file(GLOB LLAMA_MODELS_SOURCES "models/*.cpp")
++if (ISPO_LLAMA_ONLY)
++    set(LLAMA_MODELS_SOURCES
++        models/llama.cpp)
++else()
++    file(GLOB LLAMA_MODELS_SOURCES "models/*.cpp")
++endif()
+diff --git a/src/llama-arch.cpp b/src/llama-arch.cpp
+index aa2cb8bcc..a1dd8473d 100644
+--- a/src/llama-arch.cpp
++++ b/src/llama-arch.cpp
+@@ -7,0 +8,8 @@
++// ISPO's sealed artifact accepts the Llama architecture used by its explicit
++// local-model contract. Other model-family dispatch is not compiled.
++#if defined(ISPO_LLAMA_ONLY)
++static const std::map<llm_arch, const char *> LLM_ARCH_NAMES = {
++    { LLM_ARCH_LLAMA, "llama" },
++    { LLM_ARCH_UNKNOWN, "(unknown)" },
++};
++#else
+@@ -155,0 +164 @@ static const std::map<llm_arch, const char *> LLM_ARCH_NAMES = {
++#endif
+@@ -177,0 +187 @@ static const std::map<llm_kv, const char *> LLM_KV_NAMES = {
++#if !defined(ISPO_LLAMA_ONLY)
+@@ -178,0 +189 @@ static const std::map<llm_kv, const char *> LLM_KV_NAMES = {
++#endif
+@@ -180,0 +192 @@ static const std::map<llm_kv, const char *> LLM_KV_NAMES = {
++#if !defined(ISPO_LLAMA_ONLY)
+@@ -182,0 +195 @@ static const std::map<llm_kv, const char *> LLM_KV_NAMES = {
++#endif
+@@ -367,0 +381 @@ static const std::map<llm_kv, const char *> LLM_KV_NAMES = {
++#if !defined(ISPO_LLAMA_ONLY)
+@@ -368,0 +383 @@ static const std::map<llm_kv, const char *> LLM_KV_NAMES = {
++#endif
+diff --git a/src/llama-batch.cpp b/src/llama-batch.cpp
+index 2b98a552f..9aca5a108 100644
+--- a/src/llama-batch.cpp
++++ b/src/llama-batch.cpp
+@@ -5,0 +6 @@
++#include "../ggml/src/ggml-ispo-sealed-env.h"
+diff --git a/src/llama-context.cpp b/src/llama-context.cpp
+index 792bb6cac..6dc1f2a5c 100644
+--- a/src/llama-context.cpp
++++ b/src/llama-context.cpp
+@@ -14,0 +15 @@
++#include "../ggml/src/ggml-ispo-sealed-env.h"
+diff --git a/src/llama-graph.cpp b/src/llama-graph.cpp
+index 98f44edfb..bc804d040 100644
+--- a/src/llama-graph.cpp
++++ b/src/llama-graph.cpp
+@@ -14,0 +15 @@
++#include "../ggml/src/ggml-ispo-sealed-env.h"
+diff --git a/src/llama-graph.h b/src/llama-graph.h
+index 94324c745..04603682f 100644
+--- a/src/llama-graph.h
++++ b/src/llama-graph.h
+@@ -2,0 +3,2 @@
++#include "../ggml/src/ggml-ispo-sealed-env.h"
++
+diff --git a/src/llama-kv-cache-dsv4.cpp b/src/llama-kv-cache-dsv4.cpp
+index 5caa05e8b..0a4c9db46 100644
+--- a/src/llama-kv-cache-dsv4.cpp
++++ b/src/llama-kv-cache-dsv4.cpp
+@@ -7,0 +8 @@
++#include "../ggml/src/ggml-ispo-sealed-env.h"
+diff --git a/src/llama-kv-cache-iswa.cpp b/src/llama-kv-cache-iswa.cpp
+index e91866469..171873cc7 100644
+--- a/src/llama-kv-cache-iswa.cpp
++++ b/src/llama-kv-cache-iswa.cpp
+@@ -77,2 +77 @@ llama_kv_cache_iswa::llama_kv_cache_iswa(
+-        LLAMA_LOG_WARN("%s: using full-size SWA cache (ref: %s)\n",
+-                __func__, "https://github.com/ggml-org/llama.cpp/pull/13194#issuecomment-2868343055");
++        LLAMA_LOG_WARN("%s: using full-size SWA cache\n", __func__);
+diff --git a/src/llama-kv-cache.cpp b/src/llama-kv-cache.cpp
+index 5382cd726..189df8620 100644
+--- a/src/llama-kv-cache.cpp
++++ b/src/llama-kv-cache.cpp
+@@ -6,0 +7 @@
++#include "../ggml/src/ggml-ispo-sealed-env.h"
+diff --git a/src/llama-model-loader.cpp b/src/llama-model-loader.cpp
+index 1ca698704..68aa31f87 100644
+--- a/src/llama-model-loader.cpp
++++ b/src/llama-model-loader.cpp
+@@ -7,0 +8 @@
++#include "../ggml/src/ggml-ispo-sealed-env.h"
+diff --git a/src/llama-model.cpp b/src/llama-model.cpp
+index e410dbb9f..21ac58602 100644
+--- a/src/llama-model.cpp
++++ b/src/llama-model.cpp
+@@ -41,0 +42,6 @@ static llama_model * llama_model_mapping(llm_arch arch, const llama_model_params
++#if defined(ISPO_LLAMA_ONLY)
++    if (arch != LLM_ARCH_LLAMA) {
++        return nullptr;
++    }
++    return new llama_model_llama(params);
++#else
+@@ -333,0 +340 @@ static llama_model * llama_model_mapping(llm_arch arch, const llama_model_params
++#endif

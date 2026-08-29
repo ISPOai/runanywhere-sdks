@@ -17,6 +17,20 @@ std::unique_ptr<InferenceCore> g_core;
 
 InferenceCore& core();
 
+template <typename Callback>
+Napi::Value synchronous_callback(const Napi::CallbackInfo& info, Callback&& callback) {
+    try {
+        return std::forward<Callback>(callback)();
+    } catch (const Napi::Error& error) {
+        error.ThrowAsJavaScriptException();
+    } catch (const std::exception& error) {
+        Napi::Error::New(info.Env(), error.what()).ThrowAsJavaScriptException();
+    } catch (...) {
+        Napi::Error::New(info.Env(), "local inference adapter failed").ThrowAsJavaScriptException();
+    }
+    return info.Env().Undefined();
+}
+
 Napi::Object metrics_object(Napi::Env env) {
     const auto metrics = core().metrics();
     Napi::Object result = Napi::Object::New(env);
@@ -26,6 +40,15 @@ Napi::Object metrics_object(Napi::Env env) {
                Napi::Number::New(env, static_cast<double>(metrics.cancelled_generations)));
     result.Set("elapsedMs", Napi::Number::New(env, metrics.elapsed_ms));
     result.Set("backend", Napi::String::New(env, ispo::inference::backend_name(metrics.backend)));
+    return result;
+}
+
+Napi::Object capabilities_object(Napi::Env env) {
+    Napi::Object result = Napi::Object::New(env);
+    result.Set("metalCompiled", Napi::Boolean::New(env, core().metal_compiled()));
+    result.Set("metalInitialized", Napi::Boolean::New(env, core().metal_initialized()));
+    result.Set("loaded", Napi::Boolean::New(env, core().loaded()));
+    result.Set("backend", Napi::String::New(env, ispo::inference::backend_name(core().backend())));
     return result;
 }
 
@@ -130,74 +153,91 @@ void require_string(const Napi::CallbackInfo& info, size_t index, const char* si
 }
 
 Napi::Value Initialize(const Napi::CallbackInfo& info) {
-    const Napi::Object config = options(info, 0);
-    core().initialize(boolean_option(config, "forceCpu", false));
-    return info.Env().Undefined();
+    return synchronous_callback(info, [&info] {
+        const Napi::Object config = options(info, 0);
+        core().initialize(boolean_option(config, "forceCpu", false));
+        return info.Env().Undefined();
+    });
 }
 
 Napi::Value Capabilities(const Napi::CallbackInfo& info) {
-    Napi::Object result = Napi::Object::New(info.Env());
-    result.Set("metalCompiled", Napi::Boolean::New(info.Env(), core().metal_compiled()));
-    result.Set("loaded", Napi::Boolean::New(info.Env(), core().loaded()));
-    result.Set("backend", Napi::String::New(info.Env(), ispo::inference::backend_name(core().backend())));
-    return result;
+    return synchronous_callback(info, [&info] { return capabilities_object(info.Env()); });
 }
 
 Napi::Value LoadExactLocalModel(const Napi::CallbackInfo& info) {
-    require_string(info, 0, "loadExactLocalModel(absoluteGgufPath, options?)");
-    const Napi::Object config = options(info, 1);
-    LoadOptions load_options;
-    load_options.context_tokens = uint_option(config, "contextTokens", 512);
-    load_options.threads = static_cast<int32_t>(uint_option(config, "threads", 0));
-    load_options.force_cpu = boolean_option(config, "forceCpu", false);
-    core().load_exact_local_model(info[0].As<Napi::String>().Utf8Value(), load_options);
-    return Capabilities(info);
+    return synchronous_callback(info, [&info] {
+        require_string(info, 0, "loadExactLocalModel(absoluteGgufPath, options?)");
+        const Napi::Object config = options(info, 1);
+        LoadOptions load_options;
+        load_options.context_tokens = uint_option(config, "contextTokens", 512);
+        load_options.threads = static_cast<int32_t>(uint_option(config, "threads", 0));
+        load_options.force_cpu = boolean_option(config, "forceCpu", false);
+        load_options.inject_metal_failure_for_test =
+            boolean_option(config, "injectMetalFailureForTest", false);
+        core().load_exact_local_model(info[0].As<Napi::String>().Utf8Value(), load_options);
+        return capabilities_object(info.Env());
+    });
 }
 
 Napi::Value Complete(const Napi::CallbackInfo& info) {
-    require_string(info, 0, "complete(prompt, options?)");
-    const uint32_t max_tokens = uint_option(options(info, 1), "maxTokens", 32);
-    return Napi::String::New(info.Env(), core().complete(info[0].As<Napi::String>().Utf8Value(), max_tokens));
+    return synchronous_callback(info, [&info] {
+        require_string(info, 0, "complete(prompt, options?)");
+        const uint32_t max_tokens = uint_option(options(info, 1), "maxTokens", 32);
+        return Napi::String::New(
+            info.Env(), core().complete(info[0].As<Napi::String>().Utf8Value(), max_tokens));
+    });
 }
 
 Napi::Value Stream(const Napi::CallbackInfo& info) {
-    require_string(info, 0, "stream(prompt, options, onDelta, onTerminal)");
-    if (info.Length() < 4 || !info[2].IsFunction() || !info[3].IsFunction()) {
-        throw Napi::TypeError::New(info.Env(),
-                                   "stream(prompt, options, onDelta, onTerminal) requires callbacks");
-    }
-    const uint32_t max_tokens = uint_option(options(info, 1), "maxTokens", 32);
-    auto* worker = new StreamWorker(info.Env(), core(), info[0].As<Napi::String>().Utf8Value(), max_tokens,
-                                    info[2].As<Napi::Function>(), info[3].As<Napi::Function>());
-    worker->Queue();
-    return info.Env().Undefined();
+    return synchronous_callback(info, [&info] {
+        require_string(info, 0, "stream(prompt, options, onDelta, onTerminal)");
+        if (info.Length() < 4 || !info[2].IsFunction() || !info[3].IsFunction()) {
+            throw Napi::TypeError::New(info.Env(),
+                                       "stream(prompt, options, onDelta, onTerminal) requires callbacks");
+        }
+        const uint32_t max_tokens = uint_option(options(info, 1), "maxTokens", 32);
+        auto worker = std::make_unique<StreamWorker>(
+            info.Env(), core(), info[0].As<Napi::String>().Utf8Value(), max_tokens,
+            info[2].As<Napi::Function>(), info[3].As<Napi::Function>());
+        worker->Queue();
+        worker.release();
+        return info.Env().Undefined();
+    });
 }
 
 Napi::Value Cancel(const Napi::CallbackInfo& info) {
-    core().cancel();
-    return info.Env().Undefined();
+    return synchronous_callback(info, [&info] {
+        core().cancel();
+        return info.Env().Undefined();
+    });
 }
 
 Napi::Value Unload(const Napi::CallbackInfo& info) {
-    core().unload();
-    return info.Env().Undefined();
+    return synchronous_callback(info, [&info] {
+        core().unload();
+        return info.Env().Undefined();
+    });
 }
 
 Napi::Value Metrics(const Napi::CallbackInfo& info) {
-    return metrics_object(info.Env());
+    return synchronous_callback(info, [&info] { return metrics_object(info.Env()); });
 }
 
 Napi::Value Reset(const Napi::CallbackInfo& info) {
-    core().reset();
-    return info.Env().Undefined();
+    return synchronous_callback(info, [&info] {
+        core().reset();
+        return info.Env().Undefined();
+    });
 }
 
 Napi::Value Shutdown(const Napi::CallbackInfo& info) {
-    if (g_core) {
-        g_core->shutdown();
-        g_core.reset();
-    }
-    return info.Env().Undefined();
+    return synchronous_callback(info, [&info] {
+        if (g_core) {
+            g_core->shutdown();
+            g_core.reset();
+        }
+        return info.Env().Undefined();
+    });
 }
 
 Napi::Object Register(Napi::Env env, Napi::Object exports) {

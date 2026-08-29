@@ -27,7 +27,8 @@ if nm -u "$addon" | grep -E '_(dlopen|dlsym|dlclose|getenv|NSGetExecutablePath)$
     echo "artifact retains ambient or dynamic-backend discovery symbols" >&2
     exit 65
 fi
-if strings -a "$addon" | grep -E -i 'HF_TOKEN|huggingface|GGML_BACKEND_PATH|https?://|openvino|hexagon|virtgpu|qhexrt|neurt|sherpa|onnx|runanywhere connect' >/dev/null; then
+readonly forbidden_strings='HF_TOKEN|HF_HOME|XDG_CACHE_HOME|huggingface|general\.url|general\.source|tokenizer\.huggingface|GGML_BACKEND_PATH|https?://|http_proxy|https_proxy|keychain|proxy|download|repository|openvino|hexagon|virtgpu|qhexrt|qairt|neurt|sherpa|onnx|coreml|mlx|cuda|vulkan|hipblas|sycl|opencl|musa|runanywhere connect'
+if strings -a "$addon" | grep -E -i "$forbidden_strings" >/dev/null; then
     echo "artifact retains a forbidden transport, repository, or engine string" >&2
     exit 65
 fi
