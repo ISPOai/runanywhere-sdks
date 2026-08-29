@@ -346,8 +346,8 @@ find "$package_stage_dir" -type f -exec touch -t "$artifact_timestamp" {} +
 ) > "$package_stage_dir/metadata/artifact-manifest.sha256"
 touch -t "$artifact_timestamp" "$package_stage_dir/metadata/artifact-manifest.sha256"
 (
-    cd "$package_stage_dir"
-    COPYFILE_DISABLE=1 LC_ALL=C TZ=UTC find . -type f -print |
+    cd "$output_dir"
+    COPYFILE_DISABLE=1 LC_ALL=C TZ=UTC find "$(basename "$package_stage_dir")" -type f -print |
         LC_ALL=C sort |
         zip -X -q "$package_archive" -@
 )

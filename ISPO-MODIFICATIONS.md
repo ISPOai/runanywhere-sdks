@@ -196,7 +196,7 @@ download/HF-cache/cloud paths described above.
 
 ## Shipped artifacts
 
-The Phase 1 package layout is `ispo-local-inference-darwin-arm64-0.20.31-ispo.2/`: one native addon in `native/`, embedded Metal shaders inside that Mach-O, no third-party dylibs, notices in `notices/`, and input/SBOM/hash records in `metadata/`. It is an input suitable for later nested desktop signing; this script signs only the native addon and never publishes a package or release.
+The Phase 1 package layout is `ispo-local-inference-darwin-arm64-0.20.31-ispo.2/`: one native addon in `native/`, embedded Metal shaders inside that Mach-O, no third-party dylibs, notices in `notices/`, and input/SBOM/hash records in `metadata/`. The ZIP preserves that versioned directory as its top-level entry; extraction never spills `native/`, `notices/`, or `metadata/` into a desktop-signing parent. It is an input suitable for later nested desktop signing; this script signs only the native addon and never publishes a package or release.
 
 `metadata/artifact-manifest.sha256` hashes every staged file except itself. The `.zip.sha256` is adjacent to, not inside, the archive, so the archive hash is non-circular. Secure timestamping makes an official Developer ID archive time-bearing; byte-identical reproducibility is instead proven on the unsigned addon and separately named ad-hoc development archive, while the official archive has deterministic layout and a strict signature gate.
 
@@ -241,6 +241,16 @@ absent.
 
 The artifact identity is `@ispo/runanywhere-local-inference@0.20.31-ispo.2`. It is a host-internal N-API module, not an Electron preload/renderer/global surface. Its only exports are `initialize`, `capabilities`, `loadExactLocalModel`, `complete`, `stream`, `cancel`, `unload`, `metrics`, `reset`, and `shutdown`.
 
+Each Node-API environment owns its own adapter state through instance data; no
+namespace-static inference core survives into shared-library destruction. The
+N-API v8 asynchronous cleanup hook marks the environment unavailable, cancels
+active generation, waits for every queued/running stream lease to finish,
+unloads the model, shuts down and destroys `InferenceCore`, and only then
+releases the hook. The environment finalizer repeats the same idempotent
+shutdown path after the hook, including when initialization had failed after a
+partially constructed core. Explicit `shutdown()` uses that same path and may
+be called repeatedly before ordinary Node return.
+
 The selected source slice fetches only the public llama.cpp commit `79e2eb5eef131799ca6a2e2e342056a37a148df8`, archive SHA-256 `67d40b994c948d6536c50a1fe613cc0e4710af2567667344011a40f4dcbe72e9`, and applies `llama-static-backend-registry.patch`, SHA-256 `cf94d1a767693a88d29e5f68340970452d87dc6bceb1d4bf52a17886fbcb6200`. It removes `ggml-backend-dl.cpp` from the selected target and compiles a static CPU/Accelerate/Metal registry only.
 
 The release preset has `RAC_DESKTOP_ADAPTER=OFF`; inherited core, cloud/control-plane, telemetry, Connect, model downloads, NeuRT, QHexRT, ONNX, Sherpa, server, examples, tests, HTTP, RPC, curl, and unused engines are not configured. It embeds Metal shaders. An actual GPU backend probe plus model/context fallback decides the reported backend; an injected post-probe Metal model-load failure is a deterministic CPU/Accelerate fallback test seam.
@@ -276,13 +286,15 @@ cmp \
   /private/tmp/ispo-phase1-b/build/ispo-darwin-arm64-inference-release/ispo/inference/ispo_local_inference_native.node
 ```
 
-The smoke gate proves controlled JavaScript errors for URL, relative, missing, wrong-extension, unloaded, duplicate, cancellation, and shutdown cases; deterministic complete/stream token deltas and terminal metrics; repeated load/generate/cancel/unload/reset; bounded post-warmup RSS and clean process exit; positive Metal generation; explicit forced CPU/Accelerate; and the injected Metal-failure fallback.
+The smoke gate proves controlled JavaScript errors for URL, relative, missing, wrong-extension, unloaded, duplicate, cancellation, and shutdown cases; deterministic complete/stream token deltas and terminal metrics; repeated load/generate/cancel/unload/reset; bounded post-warmup RSS and clean process exit; positive Metal generation; explicit forced CPU/Accelerate; and the injected Metal-failure fallback. It also launches clean child Node processes for initialize then ordinary return, load/generate then ordinary return, a controlled early error then ordinary return, and explicit shutdown then ordinary return. A fifth child queues a stream and forces environment exit to prove cleanup cancellation/join behavior. Each child must exit zero without `SIGABRT` or `std::system_error` output.
 
 For a separately named ad-hoc development artifact only:
 
 ```sh
 ISPO_ARTIFACT_OUTPUT=/private/tmp/ispo-phase1-development \
   ./ispo/inference/scripts/package-development-darwin-arm64.sh
+unzip -Z1 /private/tmp/ispo-phase1-development/ispo-local-inference-darwin-arm64-0.20.31-ispo.2-development.zip | \
+  grep -E '^ispo-local-inference-darwin-arm64-0.20.31-ispo.2-development/(metadata|native|notices)/'
 ```
 
 For an official release candidate, an explicitly supplied Developer ID identity is mandatory. The release script fails before build/output creation when absent, signs with `--timestamp --options runtime`, requires a TeamIdentifier, hardened-runtime flag, strict verification, and a secure timestamp, and has no ad-hoc fallback:

@@ -1,5 +1,7 @@
 'use strict';
 
+const { spawnSync } = require('node:child_process');
+
 const [addonPath, modelPath] = process.argv.slice(2);
 if (!addonPath || !modelPath || !addonPath.startsWith('/') || !modelPath.startsWith('/')) {
   throw new Error('usage: node run-smoke.js /absolute/path/addon.node /absolute/path/model.gguf');
@@ -11,6 +13,49 @@ const maxRssPlateauBytes = 8 * 1024 * 1024;
 
 const assert = (condition, message) => {
   if (!condition) throw new Error(message);
+};
+
+const ordinaryReturn = (label, source) => {
+  const result = spawnSync(process.execPath, ['-e', source], {
+    encoding: 'utf8',
+    maxBuffer: 1024 * 1024,
+  });
+  const output = `${result.stdout || ''}${result.stderr || ''}`;
+  assert(!result.error, `${label} could not start: ${result.error && result.error.message}`);
+  assert(result.signal === null, `${label} exited from signal ${result.signal}`);
+  assert(result.status === 0, `${label} exited ${result.status}: ${output}`);
+  assert(!/SIGABRT|std::system_error/.test(output), `${label} reported teardown failure: ${output}`);
+  return { label, status: result.status };
+};
+
+const lifecycleSubprocesses = () => {
+  const native = `const native = require(${JSON.stringify(addonPath)});`;
+  const model = JSON.stringify(modelPath);
+  return [
+    ordinaryReturn('initialize then ordinary return', `${native}
+      native.initialize({ forceCpu: true });`),
+    ordinaryReturn('load and generate then ordinary return', `${native}
+      native.initialize({ forceCpu: true });
+      native.loadExactLocalModel(${model}, { contextTokens: 256, threads: 2, forceCpu: true });
+      const completion = native.complete('Once upon a time', { maxTokens: 8 });
+      if (typeof completion !== 'string' || completion.length === 0) throw new Error('missing completion');`),
+    ordinaryReturn('controlled error then ordinary return', `${native}
+      native.initialize({ forceCpu: true });
+      try {
+        native.loadExactLocalModel('/private/tmp/ispo-missing-model.gguf');
+      } catch (error) {
+        if (!(error instanceof Error)) throw new Error('controlled error was not an Error');
+      }`),
+    ordinaryReturn('explicit shutdown then ordinary return', `${native}
+      native.initialize({ forceCpu: true });
+      native.shutdown();
+      native.shutdown();`),
+    ordinaryReturn('in-flight stream environment cleanup', `${native}
+      native.initialize({ forceCpu: true });
+      native.loadExactLocalModel(${model}, { contextTokens: 256, threads: 2, forceCpu: true });
+      native.stream('Continue', { maxTokens: 256 }, () => {}, () => {});
+      process.exit(0);`),
+  ];
 };
 
 const expectJavaScriptError = (label, callback) => {
@@ -74,6 +119,7 @@ const completeAndStream = async () => {
 (async () => {
   assert(Number.isInteger(cycles) && cycles >= 6, 'ISPO_SMOKE_CYCLES must be an integer of at least 6');
   native.shutdown();
+  const teardownChecks = lifecycleSubprocesses();
 
   const boundaryErrors = [
     expectJavaScriptError('initialize wrong option type', () => native.initialize({ forceCpu: 'false' })),
@@ -180,7 +226,8 @@ const completeAndStream = async () => {
     injectedFailureBackend: injectedFailureCapabilities.backend,
     rssCheckpoints,
     rssPlateauBytes,
-    processExit: 'clean-on-zero-status',
+    teardownChecks,
+    processExit: 'explicit-shutdown-and-ordinary-return-clean',
   }));
 })().catch((error) => {
   console.error(error.stack || error.message);
