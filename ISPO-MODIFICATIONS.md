@@ -291,13 +291,15 @@ attempting another decode and producing a memory-slot failure.
 
 Each Node-API environment owns its own adapter state through instance data; no
 namespace-static inference core survives into shared-library destruction. The
-N-API v8 asynchronous cleanup hook marks the environment unavailable, cancels
-active generation, waits for every queued/running stream lease to finish,
-unloads the model, shuts down and destroys `InferenceCore`, and only then
-releases the hook. The environment finalizer repeats the same idempotent
-shutdown path after the hook, including when initialization had failed after a
-partially constructed core. Explicit `shutdown()` uses that same path and may
-be called repeatedly before ordinary Node return.
+N-API v8 asynchronous cleanup hook runs its cancel-and-drain sequence on the
+Node cleanup thread: it cancels active generation, waits for every
+queued/running stream lease to finish, unloads the model, shuts down and
+destroys `InferenceCore`, and only then releases the hook. It never calls
+Node-API cleanup-handle removal from a detached native thread. The environment
+finalizer repeats the same idempotent shutdown path after the hook, including
+when initialization had failed after a partially constructed core. Explicit
+`shutdown()` uses that same path and may be called repeatedly before ordinary
+Node return.
 
 The selected source slice fetches only the public llama.cpp commit `79e2eb5eef131799ca6a2e2e342056a37a148df8`, archive SHA-256 `67d40b994c948d6536c50a1fe613cc0e4710af2567667344011a40f4dcbe72e9`, and applies `llama-static-backend-registry.patch`, SHA-256 `cf94d1a767693a88d29e5f68340970452d87dc6bceb1d4bf52a17886fbcb6200`. It removes `ggml-backend-dl.cpp` from the selected target and compiles a static CPU/Accelerate/Metal registry only.
 

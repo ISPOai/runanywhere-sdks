@@ -8,7 +8,6 @@
 #include <mutex>
 #include <stdexcept>
 #include <string>
-#include <thread>
 #include <utility>
 
 #include "inference_core.h"
@@ -145,21 +144,13 @@ class EnvironmentState final {
     void shutdown() noexcept { shutdown_core(false); }
 
     void begin_environment_cleanup(napi_async_cleanup_hook_handle hook) noexcept {
-        {
-            std::lock_guard lock(mutex_);
-            environment_teardown_ = true;
-        }
-        cancel();
-
-        try {
-            std::thread([this, hook] {
-                shutdown_core(true);
-                (void)napi_remove_async_cleanup_hook(hook);
-            }).detach();
-        } catch (...) {
-            shutdown_core(true);
-            (void)napi_remove_async_cleanup_hook(hook);
-        }
+        // The Node-API cleanup-handle destructor schedules work on the owning
+        // environment. Calling it from a detached native thread races Node's
+        // environment teardown on ordinary process exit. The worker lease is
+        // released from Execute(), before its JavaScript completion callback,
+        // so draining here does not require the event loop to re-enter JS.
+        shutdown_core(true);
+        (void)napi_remove_async_cleanup_hook(hook);
     }
 
     void finalize_environment() noexcept { shutdown_core(true); }
