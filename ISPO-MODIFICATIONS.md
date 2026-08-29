@@ -51,16 +51,19 @@ and runtime sealing are explicitly Phase 1 work.
 
 | Patch / commit | Purpose and reviewed delta | Reviewer / evidence | Status |
 | --- | --- | --- |
-| `98a0ca76a2c0d5219ce5ca11cf3eea65442d4cc0` | Changes only `bindings/electron/native/package.json` and `package-lock.json`: makes the selected private N-API source package `@ispo/runanywhere-local-inference-native@0.20.31-ispo.0`. | Phase 0 repair-owner review: `git show --stat`, manifest/lock identity check, and clean `npm ci --ignore-scripts`; no associated GitHub pull request exists. | Reviewed direct downstream commit |
-| `5b98189417b0b0ed6c84b6c5233a50976489918f` | Adds this record, the upstream-update policy, and third-party notice; does not change upstream runtime source. | Phase 0 repair-owner review: exact diff audit, license comparison, and public-build record; no associated GitHub pull request exists. | Reviewed direct downstream commit |
-| `37ee854ab6b0c73b9cc6f85ddaf0d5c03a3c663e` | Resolves the Phase 0 llama.cpp tag to its source commit in this record. | Phase 0 repair-owner review: `git ls-remote`/fresh configure resolved the recorded commit; no associated GitHub pull request exists. | Reviewed direct downstream commit |
-| `d2fdbfb85c41d6e0f5f8f254aee58a91ff0a3075` | Synchronizes the native package-lock header and adds the complete reproducibility, license, and repair-input record, including the checked Python lock. | Phase 0 repair-owner review: clean-checkout verification commands and outputs recorded below. | Reviewed direct downstream commit |
-| `3205279cb974c33dc66cb226f8387ce3f34823a4` | Corrects the resolved Abseil tag and records the first clean public build evidence. | Phase 0 repair-owner review: fresh public-clone configure/build, dependency revision audit, and no-credential check. | Reviewed direct downstream commit |
+| `98a0ca76a2c0d5219ce5ca11cf3eea65442d4cc0` | Changes only `bindings/electron/native/package.json` and `package-lock.json`: makes the selected private N-API source package `@ispo/runanywhere-local-inference-native@0.20.31-ispo.0`. | Closure PR review scope: manifest/lock identity and clean native `npm ci --ignore-scripts`; independent review is required before merge. | Awaiting independent PR review |
+| `5b98189417b0b0ed6c84b6c5233a50976489918f` | Adds this record, the upstream-update policy, and third-party notice; does not change upstream runtime source. | Closure PR review scope: exact diff, preserved upstream license, and notice coverage; independent review is required before merge. | Awaiting independent PR review |
+| `37ee854ab6b0c73b9cc6f85ddaf0d5c03a3c663e` | Resolves the Phase 0 llama.cpp tag to its source commit in this record. | Closure PR review scope: public source revision is checked against the clean configure; independent review is required before merge. | Awaiting independent PR review |
+| `d2fdbfb85c41d6e0f5f8f254aee58a91ff0a3075` | Synchronizes the native package-lock header and adds the reproducibility, license, and repair-input record, including the checked Python lock. | Closure PR review scope: hash-locked Python input and public-build recipe; independent review is required before merge. | Awaiting independent PR review |
+| `3205279cb974c33dc66cb226f8387ce3f34823a4` | Corrects the resolved Abseil tag and records the first clean public build evidence. | Closure PR review scope: dependency revision and fresh public configure/build evidence; independent review is required before merge. | Awaiting independent PR review |
+| `106d680a217895d4a3d83b21ffe0735dda69bbb0` | Records the final Phase 0 clean-build result without changing runtime source, CMake inputs, or package-lock contents. | Closure PR review scope: build transcript, output hash, source-graph, and no-credential evidence; independent review is required before merge. | Awaiting independent PR review |
 | Phase 1 runtime patch set | Inference-only CMake preset, source reduction, sealing, packaging. | Not yet produced. | Phase 1 owns it |
 
-No upstream source logic has been modified in Phase 0. This ledger must name
-each downstream commit, its purpose, and the reviewed upstream delta before it
-is merged to `ispo/main`.
+No upstream source logic has been modified in Phase 0. The additive closure PR
+contains the repair to this ledger and is the auditable independent-review
+record for all six pre-existing direct commits. Its review must identify the
+exact PR head, reviewer, and verification evidence before merge; neither this
+ledger nor its author claims that independent review has already happened.
 
 ## Package identity
 
@@ -129,13 +132,27 @@ settings.
 
 ## Phase 0 public build evidence
 
-Fresh public checkout evidence for
-`3205279cb974c33dc66cb226f8387ce3f34823a4` is recorded below. This head
-contains the package-lock repair and checked Python lock; the follow-up
-documentation record does not alter CMake, source, or package-lock inputs. The
-commands were:
+Fresh public-checkout evidence for
+`106d680a217895d4a3d83b21ffe0735dda69bbb0` is recorded below. The closure PR
+reruns this exact recipe at its head after the manifest and lock repair. The
+commands use a new empty scratch directory, a public HTTPS clone, and a
+deliberately empty environment. Set the exact public branch name in
+`head_ref`; the closure branch is `ispo/phase0-closure-review`.
 
 ```sh
+scratch="$(mktemp -d /private/tmp/runanywhere-phase0-public.XXXXXX)"
+public_remote="https://github.com/ISPOai/runanywhere-sdks.git"
+head_ref="ispo/phase0-closure-review"
+tool_path="/Users/venge/.local/bin:/opt/homebrew/bin:/usr/bin:/bin:/usr/sbin:/sbin"
+mkdir -p "$scratch/home" "$scratch/npm-cache"
+env -i HOME="$scratch/home" PATH="$tool_path" LANG=C.UTF-8 \
+  GIT_TERMINAL_PROMPT=0 git clone --branch "$head_ref" --single-branch \
+  "$public_remote" "$scratch/repo"
+repo="$scratch/repo"
+cd "$repo/bindings/electron/native"
+env -i HOME="$scratch/home" PATH="$tool_path" LANG=C.UTF-8 \
+  npm ci --ignore-scripts --cache "$scratch/npm-cache"
+cd "$repo"
 env -i HOME="$scratch/home" PATH="$tool_path" LANG=C.UTF-8 \
   python3 -m venv "$scratch/phase0-python"
 env -i HOME="$scratch/home" PATH="$tool_path" LANG=C.UTF-8 \
