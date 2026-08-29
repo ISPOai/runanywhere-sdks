@@ -61,6 +61,7 @@ class InferenceCore {
     llama_context* context_ = nullptr;
     llama_sampler* sampler_ = nullptr;
     std::atomic<bool> cancel_requested_{false};
+    std::atomic<bool> generating_{false};
     bool backend_initialized_ = false;
     bool force_cpu_ = false;
     Backend backend_ = Backend::kCpu;

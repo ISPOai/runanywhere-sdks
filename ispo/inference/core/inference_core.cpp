@@ -146,6 +146,7 @@ void InferenceCore::load_exact_local_model(const std::string& path, const LoadOp
         llama_model_free(model_);
         model_ = nullptr;
         model_params.n_gpu_layers = 0;
+        model_params.devices = cpu_devices;
         model_ = llama_model_load_from_file(path.c_str(), model_params);
         backend_ = Backend::kCpu;
         context_params.offload_kqv = false;
@@ -166,6 +167,14 @@ void InferenceCore::load_exact_local_model(const std::string& path, const LoadOp
 void InferenceCore::generate(const std::string& prompt, uint32_t max_tokens,
                              const std::function<void(const std::string&)>& on_delta,
                              std::string* completed) {
+    bool was_generating = false;
+    if (!generating_.compare_exchange_strong(was_generating, true)) {
+        throw std::runtime_error("local inference is already generating");
+    }
+    struct GenerationGuard {
+        std::atomic<bool>& generating;
+        ~GenerationGuard() { generating.store(false); }
+    } guard{generating_};
     std::lock_guard lock(mutex_);
     if (model_ == nullptr || context_ == nullptr || sampler_ == nullptr) {
         throw std::runtime_error("no local model is loaded");

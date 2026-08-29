@@ -94,7 +94,7 @@ ARM64 Phase 0 configure; it is not a shipping bill of materials.
 | Input | Immutable origin and resolved identity | License / integrity |
 | --- | --- | --- |
 | RunAnywhere source | `https://github.com/RunanywhereAI/runanywhere-sdks.git` commit `00e879fa818111054c02c8ad1f1a0398a4738f92` | Root `LICENSE` SHA-256 `45506e9fbd89370dae9ad4b132cf6d2cc8e26322fa4d9856e26474ff7a3c5acd` |
-| llama.cpp + ggml | `https://github.com/RunanywhereAI/llama.cpp.git`, mutable compatibility tag `runanywhere-b10453.4` resolved to commit `79e2eb5eef131799ca6a2e2e342056a37a148df8` | MIT; preserve its license/notices |
+| llama.cpp + ggml | `https://github.com/RunanywhereAI/llama.cpp.git`, immutable commit `79e2eb5eef131799ca6a2e2e342056a37a148df8`, source archive SHA-256 `67d40b994c948d6536c50a1fe613cc0e4710af2567667344011a40f4dcbe72e9` | MIT; the Phase 1 build verifies the archive hash before applying the fork-owned static-backend patch. |
 | Abseil | `https://github.com/abseil/abseil-cpp.git` tag `20260107.1` resolved to commit `255c84dadd029fd8ad25c5efb5933e47beaa00c7` | Apache-2.0 |
 | protobuf C++ | `https://github.com/protocolbuffers/protobuf.git` tag `v35.1` resolved to commit `35cd01f9fe9afbeea38cc7b979a3b6bfcde82c03` | BSD-3-Clause |
 | nlohmann/json | `https://github.com/nlohmann/json.git` tag `v3.12.0` resolved to commit `55f93686c01528224f448c19128836e7df245f72` | MIT |
@@ -224,20 +224,26 @@ are disabled.
 ```sh
 cd bindings/electron/native
 npm ci --ignore-scripts --cache /private/tmp/ispo-phase1-npm-cache
-cd ../..
+cd ../../..
 cmake --preset ispo-darwin-arm64-inference-release
 cmake --build --preset ispo-darwin-arm64-inference-release --parallel 4
 ./ispo/inference/scripts/fetch-smoke-fixture.sh /private/tmp/ispo-fixtures/stories15M-q4_0.gguf
 node ispo/inference/scripts/run-smoke.js \
   "$PWD/build/ispo-darwin-arm64-inference-release/ispo/inference/ispo_local_inference_native.node" \
   /private/tmp/ispo-fixtures/stories15M-q4_0.gguf
-ISPO_RELEASE_SIGNING=1 ISPO_CODESIGN_IDENTITY='Developer ID Application: ISPO Labs, Inc (4L8CX8AY6M)' \
+ISPO_CODESIGN_IDENTITY='Developer ID Application: ISPO Labs, Inc (4L8CX8AY6M)' \
   ./ispo/inference/scripts/package-darwin-arm64.sh
 ```
+
+For a separately named ad-hoc development artifact only, run
+`./ispo/inference/scripts/package-development-darwin-arm64.sh`; the release
+script always requires an explicitly supplied identity, hardened runtime, and
+secure timestamp.
 
 The test-only `stories15M-q4_0.gguf` fixture is pinned in
 `ispo/inference/fixtures/stories15m-q4_0.json` to source revision
 `499bc8821c6b12b4e53c5bffcb21ec206f212d81` and SHA-256
 `66967fbece6dbe97886593fdbb73589584927e29119ec31f08090732d1861739`.
-The runtime has no fixture download code. Model license admission remains a
-separate host decision.
+Its license is unverified at that revision, so the fixture is not shipped,
+redistributed, or admitted for runtime use. The runtime has no fixture download
+code; model-license admission remains a separate host decision.

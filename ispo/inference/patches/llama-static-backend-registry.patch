@@ -1,0 +1,45 @@
+diff --git a/ggml/src/ggml-backend-reg.cpp b/ggml/src/ggml-backend-reg.cpp
+index e595946..f220f68 100644
+--- a/ggml/src/ggml-backend-reg.cpp
++++ b/ggml/src/ggml-backend-reg.cpp
+@@ -560,34 +560,12 @@ static ggml_backend_reg_t ggml_backend_load_best(const char * name, bool silent,
+ }
+ 
+ void ggml_backend_load_all() {
+-    ggml_backend_load_all_from_path(nullptr);
++    // ISPO patch: this sealed static target registers only linked CPU/Metal
++    // backends. It must not inspect executable paths or environment variables.
++    (void) get_reg();
+ }
+ 
+-void ggml_backend_load_all_from_path(const char * dir_path) {
+-#ifdef NDEBUG
+-    bool silent = true;
+-#else
+-    bool silent = false;
+-#endif
+-
+-    ggml_backend_load_best("blas", silent, dir_path);
+-    ggml_backend_load_best("zendnn", silent, dir_path);
+-    ggml_backend_load_best("cann", silent, dir_path);
+-    ggml_backend_load_best("cuda", silent, dir_path);
+-    ggml_backend_load_best("hip", silent, dir_path);
+-    ggml_backend_load_best("metal", silent, dir_path);
+-    ggml_backend_load_best("rpc", silent, dir_path);
+-    ggml_backend_load_best("sycl", silent, dir_path);
+-    ggml_backend_load_best("vulkan", silent, dir_path);
+-    ggml_backend_load_best("virtgpu", silent, dir_path);
+-    ggml_backend_load_best("opencl", silent, dir_path);
+-    ggml_backend_load_best("hexagon", silent, dir_path);
+-    ggml_backend_load_best("musa", silent, dir_path);
+-    ggml_backend_load_best("openvino", silent, dir_path);
+-    ggml_backend_load_best("cpu", silent, dir_path);
+-    // check the environment variable GGML_BACKEND_PATH to load an out-of-tree backend
+-    const char * backend_path = std::getenv("GGML_BACKEND_PATH");
+-    if (backend_path) {
+-        ggml_backend_load(backend_path);
+-    }
++void ggml_backend_load_all_from_path(const char *) {
++    // ISPO patch: preserve ABI but prohibit dynamic backend discovery/loading.
++    (void) get_reg();
+ }

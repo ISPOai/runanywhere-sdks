@@ -5,6 +5,7 @@
   "sourceRevision": "499bc8821c6b12b4e53c5bffcb21ec206f212d81",
   "sha256": "66967fbece6dbe97886593fdbb73589584927e29119ec31f08090732d1861739",
   "bytes": 19077344,
-  "license": "Apache-2.0",
-  "licenseSource": "https://huggingface.co/ggml-org/models-moved"
+  "license": "unverified",
+  "licenseSource": "No license metadata or LICENSE file at the pinned source revision; blocked from runtime admission or redistribution",
+  "redistribution": "test-only verification input; not shipped in the runtime artifact and not admitted for runtime use"
 }

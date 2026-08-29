@@ -36,6 +36,7 @@
             "inherits": "base-release",
             "cacheVariables": {
                 "CMAKE_OSX_ARCHITECTURES": "arm64",
+                "CMAKE_OSX_DEPLOYMENT_TARGET": "14.5",
                 "RAC_ISPO_INFERENCE_ONLY": "ON",
                 "RAC_DESKTOP_ADAPTER": "OFF",
                 "RAC_BUILD_BACKENDS": "OFF",
@@ -60,6 +61,9 @@
                 "GGML_METAL": "ON",
                 "GGML_METAL_EMBED_LIBRARY": "ON",
                 "GGML_ACCELERATE": "ON",
+                "GGML_BACKEND_DL": "OFF",
+                "GGML_CPU_ALL_VARIANTS": "OFF",
+                "GGML_NATIVE": "OFF",
                 "GGML_RPC": "OFF",
                 "LLAMA_BUILD_SERVER": "OFF",
                 "LLAMA_BUILD_EXAMPLES": "OFF",

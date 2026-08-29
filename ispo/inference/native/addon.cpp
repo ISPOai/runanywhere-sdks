@@ -4,6 +4,7 @@
 #include <cstdint>
 #include <memory>
 #include <string>
+#include <utility>
 
 #include "inference_core.h"
 
@@ -14,12 +15,77 @@ using ispo::inference::LoadOptions;
 
 std::unique_ptr<InferenceCore> g_core;
 
+InferenceCore& core();
+
+Napi::Object metrics_object(Napi::Env env) {
+    const auto metrics = core().metrics();
+    Napi::Object result = Napi::Object::New(env);
+    result.Set("promptTokens", Napi::Number::New(env, static_cast<double>(metrics.prompt_tokens)));
+    result.Set("generatedTokens", Napi::Number::New(env, static_cast<double>(metrics.generated_tokens)));
+    result.Set("cancelledGenerations",
+               Napi::Number::New(env, static_cast<double>(metrics.cancelled_generations)));
+    result.Set("elapsedMs", Napi::Number::New(env, metrics.elapsed_ms));
+    result.Set("backend", Napi::String::New(env, ispo::inference::backend_name(metrics.backend)));
+    return result;
+}
+
 InferenceCore& core() {
     if (!g_core) {
         g_core = std::make_unique<InferenceCore>();
     }
     return *g_core;
 }
+
+class StreamWorker final : public Napi::AsyncProgressQueueWorker<std::string> {
+  public:
+    StreamWorker(Napi::Env env, InferenceCore& inference_core, std::string prompt, uint32_t max_tokens,
+                 Napi::Function on_delta, Napi::Function on_terminal)
+        : Napi::AsyncProgressQueueWorker<std::string>(env),
+          inference_core_(inference_core),
+          prompt_(std::move(prompt)),
+          max_tokens_(max_tokens),
+          on_delta_(Napi::Persistent(on_delta)),
+          on_terminal_(Napi::Persistent(on_terminal)) {}
+
+    ~StreamWorker() override {
+        on_delta_.Reset();
+        on_terminal_.Reset();
+    }
+
+    void Execute(const ExecutionProgress& progress) override {
+        try {
+            inference_core_.stream(prompt_, max_tokens_, [&progress](const std::string& delta) {
+                progress.Send(&delta, 1);
+            });
+        } catch (const std::exception&) {
+            SetError("local inference stream failed");
+        }
+    }
+
+    void OnProgress(const std::string* deltas, size_t count) override {
+        const Napi::Env env = on_delta_.Env();
+        for (size_t index = 0; index < count; ++index) {
+            on_delta_.Call({Napi::String::New(env, deltas[index])});
+        }
+    }
+
+    void OnOK() override {
+        const Napi::Env env = on_terminal_.Env();
+        on_terminal_.Call({env.Null(), metrics_object(env)});
+    }
+
+    void OnError(const Napi::Error&) override {
+        const Napi::Env env = on_terminal_.Env();
+        on_terminal_.Call({Napi::String::New(env, "local inference stream failed"), metrics_object(env)});
+    }
+
+  private:
+    InferenceCore& inference_core_;
+    std::string prompt_;
+    uint32_t max_tokens_;
+    Napi::FunctionReference on_delta_;
+    Napi::FunctionReference on_terminal_;
+};
 
 Napi::Object options(const Napi::CallbackInfo& info, size_t index) {
     if (info.Length() <= index || info[index].IsUndefined()) {
@@ -95,14 +161,15 @@ Napi::Value Complete(const Napi::CallbackInfo& info) {
 }
 
 Napi::Value Stream(const Napi::CallbackInfo& info) {
-    require_string(info, 0, "stream(prompt, options, onDelta)");
-    if (info.Length() < 3 || !info[2].IsFunction()) {
-        throw Napi::TypeError::New(info.Env(), "stream(prompt, options, onDelta) requires a callback");
+    require_string(info, 0, "stream(prompt, options, onDelta, onTerminal)");
+    if (info.Length() < 4 || !info[2].IsFunction() || !info[3].IsFunction()) {
+        throw Napi::TypeError::New(info.Env(),
+                                   "stream(prompt, options, onDelta, onTerminal) requires callbacks");
     }
     const uint32_t max_tokens = uint_option(options(info, 1), "maxTokens", 32);
-    const Napi::Function callback = info[2].As<Napi::Function>();
-    core().stream(info[0].As<Napi::String>().Utf8Value(), max_tokens,
-                  [&callback](const std::string& delta) { callback.Call({Napi::String::New(callback.Env(), delta)}); });
+    auto* worker = new StreamWorker(info.Env(), core(), info[0].As<Napi::String>().Utf8Value(), max_tokens,
+                                    info[2].As<Napi::Function>(), info[3].As<Napi::Function>());
+    worker->Queue();
     return info.Env().Undefined();
 }
 
@@ -117,15 +184,7 @@ Napi::Value Unload(const Napi::CallbackInfo& info) {
 }
 
 Napi::Value Metrics(const Napi::CallbackInfo& info) {
-    const auto metrics = core().metrics();
-    Napi::Object result = Napi::Object::New(info.Env());
-    result.Set("promptTokens", Napi::Number::New(info.Env(), static_cast<double>(metrics.prompt_tokens)));
-    result.Set("generatedTokens", Napi::Number::New(info.Env(), static_cast<double>(metrics.generated_tokens)));
-    result.Set("cancelledGenerations",
-               Napi::Number::New(info.Env(), static_cast<double>(metrics.cancelled_generations)));
-    result.Set("elapsedMs", Napi::Number::New(info.Env(), metrics.elapsed_ms));
-    result.Set("backend", Napi::String::New(info.Env(), ispo::inference::backend_name(metrics.backend)));
-    return result;
+    return metrics_object(info.Env());
 }
 
 Napi::Value Reset(const Napi::CallbackInfo& info) {
