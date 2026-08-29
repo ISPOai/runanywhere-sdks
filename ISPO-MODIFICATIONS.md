@@ -57,9 +57,8 @@ and runtime sealing are explicitly Phase 1 work.
 | `d2fdbfb85c41d6e0f5f8f254aee58a91ff0a3075` | Synchronizes the native package-lock header and adds the reproducibility, license, and repair-input record, including the checked Python lock. | Closure PR review scope: hash-locked Python input and public-build recipe; independent review is required before merge. | Awaiting independent PR review |
 | `3205279cb974c33dc66cb226f8387ce3f34823a4` | Corrects the resolved Abseil tag and records the first clean public build evidence. | Closure PR review scope: dependency revision and fresh public configure/build evidence; independent review is required before merge. | Awaiting independent PR review |
 | `106d680a217895d4a3d83b21ffe0735dda69bbb0` | Records the final Phase 0 clean-build result without changing runtime source, CMake inputs, or package-lock contents. | Closure PR review scope: build transcript, output hash, source-graph, and no-credential evidence; independent review is required before merge. | Awaiting independent PR review |
-| Phase 1 runtime patch set | Inference-only CMake preset, source reduction, sealing, packaging. | Not yet produced. | Phase 1 owns it |
-| Phase 1 `ispo/inference` artifact | Adds the `ispo-darwin-arm64-inference-release` preset and an isolated direct core + llama.cpp + N-API adapter. The inherited commons, engine registry, Electron facade, desktop adapter, server, downloads, telemetry, Connect, and private engines are not configured on this path. | `ispo/inference/scripts/run-smoke.js`; package manifest and binary graph scan. Independent review required. | Awaiting independent PR review |
 | `899364dc62d1881d2c9a9303e7c440589b8b58a1` | Repairs the verified Phase 1 portability, cache pinning, signing-default, notices/SBOM, command recipe, and event-loop cancellation findings. It pins the public llama.cpp commit archive by SHA-256, adds the fork-owned static-registry patch/audit gate, enforces macOS 14.5 and portable ARM64 compilation, and moves ad-hoc packaging behind an explicitly named development command. | Clean archive-pinned configure/build; independent timer cancellation smoke; release-identity absence gate; final packaged-binary audit remains a required independent-review gate. | Awaiting independent PR review |
+| `2cd6033f41264d99f0ac0f8c560569215e5e3385` | Seals the Phase 1 inference-only preset, direct core + llama.cpp + narrow N-API adapter, static backend/source reduction patch, explicit licensed fixture helper, strict artifact audit, reproducible metadata, and fail-closed signing seam. The inherited commons, Electron facade, desktop adapter, server, downloads, telemetry, Connect, and private engines are not configured on this path. | Two clean public checkout roots built byte-identical unsigned addons; strict graph audit, licensed-fixture smoke, positive Metal, forced/injected CPU fallback, deterministic development archive, and official timestamped signing evidence are recorded below. | Awaiting independent exact-head Sol review |
 
 No upstream source logic has been modified in Phase 0. The additive
 [closure PR #1](https://github.com/ISPOai/runanywhere-sdks/pull/1) contains
@@ -200,6 +199,43 @@ download/HF-cache/cloud paths described above.
 The Phase 1 package layout is `ispo-local-inference-darwin-arm64-0.20.31-ispo.2/`: one native addon in `native/`, embedded Metal shaders inside that Mach-O, no third-party dylibs, notices in `notices/`, and input/SBOM/hash records in `metadata/`. It is an input suitable for later nested desktop signing; this script signs only the native addon and never publishes a package or release.
 
 `metadata/artifact-manifest.sha256` hashes every staged file except itself. The `.zip.sha256` is adjacent to, not inside, the archive, so the archive hash is non-circular. Secure timestamping makes an official Developer ID archive time-bearing; byte-identical reproducibility is instead proven on the unsigned addon and separately named ad-hoc development archive, while the official archive has deterministic layout and a strict signature gate.
+
+### Exact Phase 1 candidate provenance
+
+The following values are from the official candidate built from implementation
+source commit `2cd6033f41264d99f0ac0f8c560569215e5e3385` on 2026-08-29. The
+candidate's included `metadata/input-manifest.json` records that same commit in
+`forkHead`. This ledger amendment is deliberately a later provenance-only
+change: it is not represented inside that already-created archive, preventing a
+self-referential archive or manifest hash. The candidate was not uploaded,
+published, merged, or released.
+
+| Candidate file / evidence | SHA-256 / exact result |
+| --- | --- |
+| Official archive | `947ac681252cb13ce5afe97ea3cdd2ae43f6cb1e490bb54d110660f026ba5dc8` |
+| Adjacent archive SHA-256 sidecar file | `72c8d44e099e23de0322d7a03c9840eb86f65fee3c9cb10c09d4aabcc04d129e`; its sole archive value is `947ac681252cb13ce5afe97ea3cdd2ae43f6cb1e490bb54d110660f026ba5dc8` |
+| Signed native addon | `2dddf2f7ad6fd969ee805461745112edc5be533192c84cdd7d3128e3e26b3199` |
+| Staged artifact manifest | `5e9c4147e3127d5b3688eb7c5d0d4fb7c304ba0ea5c82685b02a27b57ec04ae3` |
+| Input manifest | `172f29662ace9408b78383ad249ed65d0a37f147b8fd42aa1aba6b8bfd64c59e` |
+| CycloneDX 1.5 SBOM | `6f9f8d32d579dec33e4a39bef7f4b44a9b5d4948eff765d5fc5ebd4883208cba` |
+| CycloneDX schema-validation record | `5052e88a380049c5b1ff79344443d119cb998fb51d7a63e3519db21bb54c59ab` |
+| Third-party notices | `127bf60484418714b6d10b30322ca15dd6a05799df4bb7fb6910e92f1c2e461e` |
+| Separately shipped TinyLlama fixture MIT record | `6bd23f49b01b86435022533403437eba85c5a487c2d8fb4fef2ecf9cf7ea9586` |
+
+The staged manifest independently records the remaining packaged notices:
+RunAnywhere License `45506e9fbd89370dae9ad4b132cf6d2cc8e26322fa4d9856e26474ff7a3c5acd`,
+llama.cpp MIT `94f29bbed6a22c35b992c5c6ebf0e7c92f13b836b90f36f461c9cf2f0f1d010d`,
+node-addon-api MIT `89024017b88a9f2b763f79b941a4f2db3b4428edfcacdc0b23866b2da633ad0c`,
+and node-api-headers MIT `a553508f516031c91f3af1148d44970cb81bbae6c4f091be6835d39cc252238c`.
+The archive passed `unzip -t` and every staged file passed
+`shasum -a 256 -c metadata/artifact-manifest.sha256`.
+
+The candidate native addon passed strict verification under the explicitly
+supplied `Developer ID Application: ISPO Labs, Inc (4L8CX8AY6M)` identity with
+`TeamIdentifier=4L8CX8AY6M`, `flags=0x10000(runtime)`, and a secure Apple
+timestamp. This signing proof does not authorize publication or merge; the
+release script still exits 65 before building when `ISPO_CODESIGN_IDENTITY` is
+absent.
 
 ## Phase 1 artifact recipe and gate
 
