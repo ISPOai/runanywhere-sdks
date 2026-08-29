@@ -55,6 +55,7 @@ and runtime sealing are explicitly Phase 1 work.
 | `5b98189417b0b0ed6c84b6c5233a50976489918f` | Adds this record, the upstream-update policy, and third-party notice; does not change upstream runtime source. | Phase 0 repair-owner review: exact diff audit, license comparison, and public-build record; no associated GitHub pull request exists. | Reviewed direct downstream commit |
 | `37ee854ab6b0c73b9cc6f85ddaf0d5c03a3c663e` | Resolves the Phase 0 llama.cpp tag to its source commit in this record. | Phase 0 repair-owner review: `git ls-remote`/fresh configure resolved the recorded commit; no associated GitHub pull request exists. | Reviewed direct downstream commit |
 | `d2fdbfb85c41d6e0f5f8f254aee58a91ff0a3075` | Synchronizes the native package-lock header and adds the complete reproducibility, license, and repair-input record, including the checked Python lock. | Phase 0 repair-owner review: clean-checkout verification commands and outputs recorded below. | Reviewed direct downstream commit |
+| `3205279cb974c33dc66cb226f8387ce3f34823a4` | Corrects the resolved Abseil tag and records the first clean public build evidence. | Phase 0 repair-owner review: fresh public-clone configure/build, dependency revision audit, and no-credential check. | Reviewed direct downstream commit |
 | Phase 1 runtime patch set | Inference-only CMake preset, source reduction, sealing, packaging. | Not yet produced. | Phase 1 owns it |
 
 No upstream source logic has been modified in Phase 0. This ledger must name
@@ -129,10 +130,10 @@ settings.
 ## Phase 0 public build evidence
 
 Fresh public checkout evidence for
-`d2fdbfb85c41d6e0f5f8f254aee58a91ff0a3075` is recorded below. This is the
-commit that introduced the package-lock repair and checked Python lock; the
-current evidence-only documentation commit does not alter CMake, source, or
-package-lock inputs. The commands were:
+`3205279cb974c33dc66cb226f8387ce3f34823a4` is recorded below. This head
+contains the package-lock repair and checked Python lock; the follow-up
+documentation record does not alter CMake, source, or package-lock inputs. The
+commands were:
 
 ```sh
 env -i HOME="$scratch/home" PATH="$tool_path" LANG=C.UTF-8 \
@@ -165,9 +166,9 @@ per-run evidence value, not a Phase 1 artifact hash; binary identity is **not
 expected to reproduce across checkout/build paths** because the inherited
 upstream build embeds path-dependent metadata. The exact fresh-run hash and
 the path-dependence observation are: Mach-O arm64 SHA-256
-`c6df8fe2887351598d366a19e75178f756d7c7a4aa062f1cbf57349ad5e36522`, with
-`/private/tmp/runanywhere-phase0-verify.kAHOE0` paths present in the binary.
-The configure took 333.1 seconds and the bounded `--parallel 4` build passed.
+`08e19562ae3347de0354dce23469bec1df7140903a1b9c4c279c715adc3d9f22`, with
+`/private/tmp/runanywhere-phase0-final.Gy2GDp` paths present in the binary.
+The bounded `--parallel 4` build passed.
 The only reported warnings were upstream third-party compiler/deprecation
 warnings and the final duplicate-library linker warning; there were no build
 errors. `compile_commands.json` contained no NeuRT, QHexRT, QAIRT, ONNX,
