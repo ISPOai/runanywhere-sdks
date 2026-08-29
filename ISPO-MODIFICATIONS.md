@@ -60,6 +60,7 @@ and runtime sealing are explicitly Phase 1 work.
 | `899364dc62d1881d2c9a9303e7c440589b8b58a1` | Repairs the verified Phase 1 portability, cache pinning, signing-default, notices/SBOM, command recipe, and event-loop cancellation findings. It pins the public llama.cpp commit archive by SHA-256, adds the fork-owned static-registry patch/audit gate, enforces macOS 14.5 and portable ARM64 compilation, and moves ad-hoc packaging behind an explicitly named development command. | Clean archive-pinned configure/build; independent timer cancellation smoke; release-identity absence gate; final packaged-binary audit remains a required independent-review gate. | Awaiting independent PR review |
 | `2cd6033f41264d99f0ac0f8c560569215e5e3385` | Seals the Phase 1 inference-only preset, direct core + llama.cpp + narrow N-API adapter, static backend/source reduction patch, explicit licensed fixture helper, strict artifact audit, reproducible metadata, and fail-closed signing seam. The inherited commons, Electron facade, desktop adapter, server, downloads, telemetry, Connect, and private engines are not configured on this path. | Two clean public checkout roots built byte-identical unsigned addons; strict graph audit, licensed-fixture smoke, positive Metal, forced/injected CPU fallback, deterministic development archive, and official timestamped signing evidence are recorded below. | Awaiting independent exact-head Sol review |
 | `bb81e449cc02f7c52f6e39428a1bc58bc7e701a7` | Replaces namespace-global inference ownership with Node-API environment instance data, an asynchronous environment cleanup hook, and an idempotent finalizer. Cleanup cancels and drains stream work before model unload, backend shutdown, and `InferenceCore` destruction. Adds child-process ordinary-return coverage and preserves the documented versioned directory at the root of every ZIP. | Reproduced the prior exit-134 failure, then verified initialize, load/generate, controlled-error, explicit-shutdown, and in-flight stream cleanup exits without `SIGABRT` or `std::system_error`; strict artifact audit and official signed candidate provenance are recorded below. | Awaiting independent exact-head Sol review |
+| `1fe2f8f119d9bd3d457029d6f8d92cc560798706` | Introduces the Phase 1.1 internal pull stream: each host `next()` asynchronously yields no more than one bounded delta or one terminal record; cancellation, duplicate demand, abandonment, unload/reset/shutdown, and environment exit settle safely. It fixes the decode memory-slot failure by clearing the KV cache, assigning explicit positions, and stopping at the remaining context budget. It also fixes an ordinary-exit `SIGSEGV`: the cleanup hook now drains and removes its Node-API handle on the Node cleanup thread instead of a detached native thread. | Fresh public roots produced byte-identical unsigned ARM64 addons; artifact audit, signed package, manifest/SBOM/notices verification, a 100-process initialize/ordinary-exit stress check, and five consecutive six-cycle CPU diagnostics passed. This host has no usable Metal device, so positive Metal and injected-Metal-failure fallback remain required on an eligible host. | Awaiting independent exact-head Sol review |
 
 No upstream source logic has been modified in Phase 0. The additive
 [closure PR #1](https://github.com/ISPOai/runanywhere-sdks/pull/1) contains
@@ -265,6 +266,37 @@ The repaired candidate passed `unzip -t`, complete staged
 validation, strict arm64 artifact audit, and strict Developer ID verification
 with hardened runtime and a secure Apple timestamp. Release packaging without
 an explicit signing identity exited 65 before build or artifact output.
+
+### Phase 1.1 pull-stream candidate provenance
+
+The following values are from the official Phase 1.1 candidate built from
+implementation source commit `1fe2f8f119d9bd3d457029d6f8d92cc560798706` on
+2026-08-29. Its `metadata/input-manifest.json` pins both that `forkHead` and
+the immutable Phase 1.1 base
+`70877eb0a3281ae5f5ddad0fa48d60e749746083`. This later ledger amendment is
+deliberately not included in that already-created archive, so the artifact
+hashes remain non-circular. The candidate was not uploaded, published, merged,
+or released.
+
+| Candidate file / evidence | SHA-256 / exact result |
+| --- | --- |
+| Official archive | `4342a9d2627b5076a5279b68f464de129d311ab0ea1e57c1bbf02d7806d42a5f` |
+| Adjacent archive SHA-256 sidecar file | `6f2ef890f1cadae7aec5c2ecd8436643978dac5d6aff7501f782ab657b7eca76`; its sole archive value is `4342a9d2627b5076a5279b68f464de129d311ab0ea1e57c1bbf02d7806d42a5f` |
+| Signed native addon | `3381acd126e6b7aa64d64fb8524088fae9aef0d10bd677d28029c7fd4bbad93b` |
+| Staged artifact manifest | `8c207d888d692ac3c914e7e6783a4ab03d6575698594529495af05c05bce580d` |
+| Input manifest | `d3b2382390bdbe3083baa9586ee0a09d658251820bce37b822f8b9d146a26ba9` |
+| CycloneDX 1.5 SBOM | `d0aada8f6a1b228a4a6f602685c68cc28320a4cb8c8a2661f95916c06dbb3520` |
+| CycloneDX schema-validation record | `5052e88a380049c5b1ff79344443d119cb998fb51d7a63e3519db21bb54c59ab` |
+
+The candidate passed `unzip -t`, complete staged
+`metadata/artifact-manifest.sha256` verification, strict arm64 artifact audit,
+and Developer ID verification with `TeamIdentifier=4L8CX8AY6M`, hardened
+runtime, and a secure Apple timestamp. Release packaging without an explicit
+identity exited 65 before it created an artifact. Five fresh CPU diagnostics
+passed with a six-cycle RSS plateau below 8 MiB and stalled consumers that held
+both token counts and generation elapsed time constant; positive Metal and the
+injected Metal-failure path were intentionally not treated as passed on this
+host because its Metal device probe returned null.
 
 ## Phase 1 artifact recipe and gate
 
