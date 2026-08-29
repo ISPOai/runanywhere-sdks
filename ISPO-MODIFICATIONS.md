@@ -70,12 +70,12 @@ nor its author claims that independent review has already happened.
 
 ## Package identity
 
-The only package identity established in Phase 0 is the private Electron/Node
-N-API source package:
+The current Phase 1.1 package identity is the private Electron/Node N-API
+source package:
 
 | Path | ISPO package name | Version | Publication state |
 | --- | --- | --- | --- |
-| `bindings/electron/native` | `@ispo/runanywhere-local-inference-native` | `0.20.31-ispo.2` | private; never publish from Phase 0/1 |
+| `bindings/electron/native` | `@ispo/runanywhere-local-inference-native` | `0.20.31-ispo.3` | private; never publish from Phase 0/1 |
 
 The future host-private runtime artifact is reserved as
 `@ispo/runanywhere-local-inference` with an ISPO prerelease or release version
@@ -197,7 +197,7 @@ download/HF-cache/cloud paths described above.
 
 ## Shipped artifacts
 
-The Phase 1 package layout is `ispo-local-inference-darwin-arm64-0.20.31-ispo.2/`: one native addon in `native/`, embedded Metal shaders inside that Mach-O, no third-party dylibs, notices in `notices/`, and input/SBOM/hash records in `metadata/`. The ZIP preserves that versioned directory as its top-level entry; extraction never spills `native/`, `notices/`, or `metadata/` into a desktop-signing parent. It is an input suitable for later nested desktop signing; this script signs only the native addon and never publishes a package or release.
+The Phase 1.1 package layout is `ispo-local-inference-darwin-arm64-0.20.31-ispo.3/`: one native addon in `native/`, embedded Metal shaders inside that Mach-O, no third-party dylibs, notices in `notices/`, and input/SBOM/hash records in `metadata/`. The ZIP preserves that versioned directory as its top-level entry; extraction never spills `native/`, `notices/`, or `metadata/` into a desktop-signing parent. It is an input suitable for later nested desktop signing; this script signs only the native addon and never publishes a package or release.
 
 `metadata/artifact-manifest.sha256` hashes every staged file except itself. The `.zip.sha256` is adjacent to, not inside, the archive, so the archive hash is non-circular. Secure timestamping makes an official Developer ID archive time-bearing; byte-identical reproducibility is instead proven on the unsigned addon and separately named ad-hoc development archive, while the official archive has deterministic layout and a strict signature gate.
 
@@ -268,7 +268,26 @@ an explicit signing identity exited 65 before build or artifact output.
 
 ## Phase 1 artifact recipe and gate
 
-The artifact identity is `@ispo/runanywhere-local-inference@0.20.31-ispo.2`. It is a host-internal N-API module, not an Electron preload/renderer/global surface. Its only exports are `initialize`, `capabilities`, `loadExactLocalModel`, `complete`, `stream`, `cancel`, `unload`, `metrics`, `reset`, and `shutdown`.
+The artifact identity is `@ispo/runanywhere-local-inference@0.20.31-ispo.3`. It is a host-internal N-API module, not an Electron preload/renderer/global surface. Its only exports are `initialize`, `capabilities`, `loadExactLocalModel`, `complete`, `stream`, `cancel`, `unload`, `metrics`, `reset`, and `shutdown`.
+
+`stream(prompt, { maxTokens })` creates an opaque native pull-stream identity.
+It has one method, `next()`, whose Promise resolves to exactly one closed result:
+either `{ type: "delta", delta }` or `{ type: "terminal", finishReason,
+metrics }`. There is no callback argument or push queue. The host owns demand:
+no prompt evaluation or token decoding begins until the first `next()`, and a
+consumer that stops demanding cannot cause additional token generation. Only
+one `next()` can be active, one generation lease exists globally, and an
+independently callable `cancel()` terminalizes the lease exactly once. Terminal
+metrics expose prompt/output token counts, elapsed time, time-to-first-token,
+decode time, backend, cancellation state, cancellation count, and a distinct
+`stop`, `length`, `cancelled`, or `error` finish reason. The API never returns
+native pointers, paths, raw native exceptions, credentials, URLs, or discovery
+objects.
+
+Every generation clears its KV memory and sampler before prompt evaluation,
+uses explicit sequence positions, and limits output to the remaining context
+budget. A request that reaches that budget returns `length`, rather than
+attempting another decode and producing a memory-slot failure.
 
 Each Node-API environment owns its own adapter state through instance data; no
 namespace-static inference core survives into shared-library destruction. The
@@ -292,7 +311,7 @@ From a clean public checkout, run the following in two independent scratch roots
 
 ```sh
 public_remote="https://github.com/ISPOai/runanywhere-sdks.git"
-head_ref="ispo/phase1-inference-artifact"
+head_ref="ispo/phase1-1-pull-stream"
 for root in /private/tmp/ispo-phase1-a /private/tmp/ispo-phase1-b; do
   git clone --branch "$head_ref" --single-branch "$public_remote" "$root"
   (cd "$root/bindings/electron/native" &&
@@ -305,7 +324,8 @@ for root in /private/tmp/ispo-phase1-a /private/tmp/ispo-phase1-b; do
       "$root/build/ispo-darwin-arm64-inference-release/ispo/inference/ispo_local_inference_native.node"
     ./ispo/inference/scripts/fetch-smoke-fixture.sh \
       /private/tmp/ispo-fixtures/tinyllama-15M-stories-Q2_K.gguf
-    ISPO_SMOKE_CYCLES=20 node ispo/inference/scripts/run-smoke.js \
+    ISPO_SMOKE_RUNS=5 ISPO_SMOKE_CYCLES=6 \
+      ./ispo/inference/scripts/run-fresh-smoke-series.sh \
       "$root/build/ispo-darwin-arm64-inference-release/ispo/inference/ispo_local_inference_native.node" \
       /private/tmp/ispo-fixtures/tinyllama-15M-stories-Q2_K.gguf
   )
@@ -315,21 +335,33 @@ cmp \
   /private/tmp/ispo-phase1-b/build/ispo-darwin-arm64-inference-release/ispo/inference/ispo_local_inference_native.node
 ```
 
-The smoke gate proves controlled JavaScript errors for URL, relative, missing, wrong-extension, unloaded, duplicate, cancellation, and shutdown cases; deterministic complete/stream token deltas and terminal metrics; repeated load/generate/cancel/unload/reset; bounded post-warmup RSS and clean process exit; positive Metal generation; explicit forced CPU/Accelerate; and the injected Metal-failure fallback. It also launches clean child Node processes for initialize then ordinary return, load/generate then ordinary return, a controlled early error then ordinary return, and explicit shutdown then ordinary return. A fifth child queues a stream and forces environment exit to prove cleanup cancellation/join behavior. Each child must exit zero without `SIGABRT` or `std::system_error` output.
+The smoke gate has no retry-on-failure wrapper: five fresh processes each run
+six full lifecycle cycles. It proves closed pull result shapes; zero additional
+output tokens and bounded RSS while a consumer stalls after one delta;
+deterministic resume; cancel before first demand; cancel while `next()` is
+pending; rejected duplicate `next()`; unload/reset/shutdown during a pending
+`next()`; stream abandonment/GC; and implicit Node exit. It also proves
+controlled JavaScript errors for URL, relative, missing, wrong-extension,
+unloaded, duplicate, cancellation, and shutdown cases; deterministic
+complete/stream token deltas and terminal metrics; repeated
+load/generate/cancel/unload/reset; bounded post-warmup RSS; positive Metal
+generation; explicit forced CPU/Accelerate; and injected Metal-failure
+fallback. Every child must exit zero without `SIGABRT` or `std::system_error`
+output.
 
 For a separately named ad-hoc development artifact only:
 
 ```sh
-ISPO_ARTIFACT_OUTPUT=/private/tmp/ispo-phase1-development \
+ISPO_ARTIFACT_OUTPUT=/private/tmp/ispo-phase1-1-development \
   ./ispo/inference/scripts/package-development-darwin-arm64.sh
-unzip -Z1 /private/tmp/ispo-phase1-development/ispo-local-inference-darwin-arm64-0.20.31-ispo.2-development.zip | \
-  grep -E '^ispo-local-inference-darwin-arm64-0.20.31-ispo.2-development/(metadata|native|notices)/'
+unzip -Z1 /private/tmp/ispo-phase1-1-development/ispo-local-inference-darwin-arm64-0.20.31-ispo.3-development.zip | \
+  grep -E '^ispo-local-inference-darwin-arm64-0.20.31-ispo.3-development/(metadata|native|notices)/'
 ```
 
 For an official release candidate, an explicitly supplied Developer ID identity is mandatory. The release script fails before build/output creation when absent, signs with `--timestamp --options runtime`, requires a TeamIdentifier, hardened-runtime flag, strict verification, and a secure timestamp, and has no ad-hoc fallback:
 
 ```sh
-ISPO_ARTIFACT_OUTPUT=/private/tmp/ispo-phase1-release \
+ISPO_ARTIFACT_OUTPUT=/private/tmp/ispo-phase1-1-release \
 ISPO_CODESIGN_IDENTITY='Developer ID Application: ISPO Labs, Inc (4L8CX8AY6M)' \
   ./ispo/inference/scripts/package-darwin-arm64.sh
 ```
