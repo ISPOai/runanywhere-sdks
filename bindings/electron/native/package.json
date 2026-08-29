@@ -1,10 +1,15 @@
 {
-  "name": "@runanywhere/electron-native",
-  "version": "0.20.31",
-  "description": "RunAnywhere Electron SDK — native N-API addon over the rac_* C ABI (on-device LLM/VLM/STT/TTS, Windows-first, Hexagon-ready).",
+  "name": "@ispo/runanywhere-local-inference-native",
+  "version": "0.20.31-ispo.0",
+  "description": "ISPO local-inference native N-API addon over the rac_* C ABI.",
   "private": true,
   "license": "SEE LICENSE IN ../../../LICENSE",
   "type": "commonjs",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/ISPOai/runanywhere-sdks.git",
+    "directory": "bindings/electron/native"
+  },
   "dependencies": {
     "node-addon-api": "^8.9.0",
     "node-api-headers": "^1.9.0"
