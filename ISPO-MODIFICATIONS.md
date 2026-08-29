@@ -61,6 +61,7 @@ and runtime sealing are explicitly Phase 1 work.
 | `2cd6033f41264d99f0ac0f8c560569215e5e3385` | Seals the Phase 1 inference-only preset, direct core + llama.cpp + narrow N-API adapter, static backend/source reduction patch, explicit licensed fixture helper, strict artifact audit, reproducible metadata, and fail-closed signing seam. The inherited commons, Electron facade, desktop adapter, server, downloads, telemetry, Connect, and private engines are not configured on this path. | Two clean public checkout roots built byte-identical unsigned addons; strict graph audit, licensed-fixture smoke, positive Metal, forced/injected CPU fallback, deterministic development archive, and official timestamped signing evidence are recorded below. | Awaiting independent exact-head Sol review |
 | `bb81e449cc02f7c52f6e39428a1bc58bc7e701a7` | Replaces namespace-global inference ownership with Node-API environment instance data, an asynchronous environment cleanup hook, and an idempotent finalizer. Cleanup cancels and drains stream work before model unload, backend shutdown, and `InferenceCore` destruction. Adds child-process ordinary-return coverage and preserves the documented versioned directory at the root of every ZIP. | Reproduced the prior exit-134 failure, then verified initialize, load/generate, controlled-error, explicit-shutdown, and in-flight stream cleanup exits without `SIGABRT` or `std::system_error`; strict artifact audit and official signed candidate provenance are recorded below. | Awaiting independent exact-head Sol review |
 | `1fe2f8f119d9bd3d457029d6f8d92cc560798706` | Introduces the Phase 1.1 internal pull stream: each host `next()` asynchronously yields no more than one bounded delta or one terminal record; cancellation, duplicate demand, abandonment, unload/reset/shutdown, and environment exit settle safely. It fixes the decode memory-slot failure by clearing the KV cache, assigning explicit positions, and stopping at the remaining context budget. It also fixes an ordinary-exit `SIGSEGV`: the cleanup hook now drains and removes its Node-API handle on the Node cleanup thread instead of a detached native thread. | Fresh public roots produced byte-identical unsigned ARM64 addons; artifact audit, signed package, manifest/SBOM/notices verification, a 100-process initialize/ordinary-exit stress check, and five consecutive six-cycle CPU diagnostics passed. This host has no usable Metal device, so positive Metal and injected-Metal-failure fallback remain required on an eligible host. | Awaiting independent exact-head Sol review |
+| `f7f3b58706e01f403078b852d8d607bcc0a6be3b` | Repairs the Phase 1.2 Metal lifecycle RSS regression without changing the sealed N-API surface. Pull demand moves from arbitrary libuv workers to one environment-owned native executor, and each Metal demand has an explicit Objective-C autorelease scope. Cleanup still cancels and drains every lease before joining that executor and releasing model/context/KV/sampler resources. It records version `0.20.31-ispo.4` and adds both new native sources to the signed input manifest. | The eligible Apple M2 Pro lane first measured 14,204,928 bytes post-warmup without the autorelease scope; the scoped focused six-cycle smoke measured 1,245,184 bytes. The required unchanged five-fresh-process/six-cycle command then passed once, including Metal, forced CPU/Accelerate, injected Metal-load fallback, pull/backpressure, lifecycle, GC, and exit assertions. Fresh public roots produced byte-identical unsigned addons; exact signed-candidate hashes are recorded below. | Awaiting independent exact-head Sol review |
 
 No upstream source logic has been modified in Phase 0. The additive
 [closure PR #1](https://github.com/ISPOai/runanywhere-sdks/pull/1) contains
@@ -266,6 +267,49 @@ The repaired candidate passed `unzip -t`, complete staged
 validation, strict arm64 artifact audit, and strict Developer ID verification
 with hardened runtime and a secure Apple timestamp. Release packaging without
 an explicit signing identity exited 65 before build or artifact output.
+
+### Phase 1.2 Metal RSS repair candidate provenance
+
+The following values are from the official Phase 1.2 candidate built from
+implementation source commit `f7f3b58706e01f403078b852d8d607bcc0a6be3b`, an
+additive descendant of public merged `ispo/main`
+`5ab1f1f8e88946848accd151f51bebe838435387`, on 2026-08-29. Its included
+`metadata/input-manifest.json` records that `forkHead`, the immutable Phase
+1.1 base `70877eb0a3281ae5f5ddad0fa48d60e749746083`, and all 20 selected
+source inputs, including the Objective-C++ autorelease-scope source. This
+ledger amendment is deliberately a later provenance-only change: it was not
+inside the already-created candidate, so none of the archive, manifest, or
+signature hashes are self-referential. The candidate was not uploaded,
+published, merged, or released.
+
+| Candidate file / evidence | SHA-256 / exact result |
+| --- | --- |
+| Two fresh-root unsigned addons | byte-identical: `1eab6fd6a5b5530fa2bcca1b0a01ed92fbd8bccf55e94bb15af122a99e9b63e4` |
+| Official archive | `ae0b0308e3127710252ac9cd1e86f10aa71f29d960a1f7f95e398c672beecfcc` |
+| Adjacent archive SHA-256 sidecar file | `807303edf4d5640c23ab87827cf1b8090f941cca386eddfa8367f074978329a8`; its sole archive value is `ae0b0308e3127710252ac9cd1e86f10aa71f29d960a1f7f95e398c672beecfcc` |
+| Signed native addon | `696f935bc410b5e9f1e463237bddc74bd5c1b0c9ca86256cd1eaf46a9b0d443c` |
+| Staged artifact manifest | `ca8a234982a830b6e0b96dd0ebb9080c27a3b93cc0ef993be6b38ff526d35da7` |
+| Input manifest | `3d0cc94971f244d16fc58a6cc02d910255fb15a8ea84309cf360596f6e2239dc` |
+| CycloneDX 1.5 SBOM | `2a9a25143367f61edf6303d20a80460bf0be3273ed1f97b97be0153f6bdd6d7c` |
+| CycloneDX schema-validation record | `5052e88a380049c5b1ff79344443d119cb998fb51d7a63e3519db21bb54c59ab` |
+
+The signed candidate passed `unzip -t`, complete staged
+`metadata/artifact-manifest.sha256` verification (including every required
+notice and the MIT-only test-fixture record), the strict ARM64 artifact audit,
+and independent `codesign --verify --strict` validation. The explicitly
+supplied Developer ID signature reports `TeamIdentifier=4L8CX8AY6M`,
+`flags=0x10000(runtime)`, and a secure Apple timestamp. Release packaging
+without `ISPO_CODESIGN_IDENTITY` exited 65 before artifact output.
+
+The exact unchanged
+`ISPO_SMOKE_RUNS=5 ISPO_SMOKE_CYCLES=6 run-fresh-smoke-series.sh` gate ran
+once on an Apple M2 Pro Metal host. Its five post-warmup RSS plateaus were
+1,638,400, 2,523,136, 819,200, 573,440, and 2,850,816 bytes, all below the
+unchanged 8,388,608-byte contract. Each fresh process completed six lifecycle
+cycles with positive Metal execution, forced CPU/Accelerate, injected
+Metal-load fallback, stalled-consumer backpressure, cancellation/interleaving,
+GC/implicit-exit, and terminal-accounting assertions. No retry wrapper was
+used.
 
 ### Phase 1.1 pull-stream candidate provenance
 
