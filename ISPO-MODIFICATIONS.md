@@ -59,11 +59,12 @@ and runtime sealing are explicitly Phase 1 work.
 | `106d680a217895d4a3d83b21ffe0735dda69bbb0` | Records the final Phase 0 clean-build result without changing runtime source, CMake inputs, or package-lock contents. | Closure PR review scope: build transcript, output hash, source-graph, and no-credential evidence; independent review is required before merge. | Awaiting independent PR review |
 | Phase 1 runtime patch set | Inference-only CMake preset, source reduction, sealing, packaging. | Not yet produced. | Phase 1 owns it |
 
-No upstream source logic has been modified in Phase 0. The additive closure PR
-contains the repair to this ledger and is the auditable independent-review
-record for all six pre-existing direct commits. Its review must identify the
-exact PR head, reviewer, and verification evidence before merge; neither this
-ledger nor its author claims that independent review has already happened.
+No upstream source logic has been modified in Phase 0. The additive
+[closure PR #1](https://github.com/ISPOai/runanywhere-sdks/pull/1) contains
+the repair to this ledger and is the auditable independent-review record for
+all six pre-existing direct commits. Its review must identify the exact PR
+head, reviewer, and verification evidence before merge; neither this ledger
+nor its author claims that independent review has already happened.
 
 ## Package identity
 
