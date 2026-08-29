@@ -59,6 +59,7 @@ and runtime sealing are explicitly Phase 1 work.
 | `106d680a217895d4a3d83b21ffe0735dda69bbb0` | Records the final Phase 0 clean-build result without changing runtime source, CMake inputs, or package-lock contents. | Closure PR review scope: build transcript, output hash, source-graph, and no-credential evidence; independent review is required before merge. | Awaiting independent PR review |
 | `899364dc62d1881d2c9a9303e7c440589b8b58a1` | Repairs the verified Phase 1 portability, cache pinning, signing-default, notices/SBOM, command recipe, and event-loop cancellation findings. It pins the public llama.cpp commit archive by SHA-256, adds the fork-owned static-registry patch/audit gate, enforces macOS 14.5 and portable ARM64 compilation, and moves ad-hoc packaging behind an explicitly named development command. | Clean archive-pinned configure/build; independent timer cancellation smoke; release-identity absence gate; final packaged-binary audit remains a required independent-review gate. | Awaiting independent PR review |
 | `2cd6033f41264d99f0ac0f8c560569215e5e3385` | Seals the Phase 1 inference-only preset, direct core + llama.cpp + narrow N-API adapter, static backend/source reduction patch, explicit licensed fixture helper, strict artifact audit, reproducible metadata, and fail-closed signing seam. The inherited commons, Electron facade, desktop adapter, server, downloads, telemetry, Connect, and private engines are not configured on this path. | Two clean public checkout roots built byte-identical unsigned addons; strict graph audit, licensed-fixture smoke, positive Metal, forced/injected CPU fallback, deterministic development archive, and official timestamped signing evidence are recorded below. | Awaiting independent exact-head Sol review |
+| `bb81e449cc02f7c52f6e39428a1bc58bc7e701a7` | Replaces namespace-global inference ownership with Node-API environment instance data, an asynchronous environment cleanup hook, and an idempotent finalizer. Cleanup cancels and drains stream work before model unload, backend shutdown, and `InferenceCore` destruction. Adds child-process ordinary-return coverage and preserves the documented versioned directory at the root of every ZIP. | Reproduced the prior exit-134 failure, then verified initialize, load/generate, controlled-error, explicit-shutdown, and in-flight stream cleanup exits without `SIGABRT` or `std::system_error`; strict artifact audit and official signed candidate provenance are recorded below. | Awaiting independent exact-head Sol review |
 
 No upstream source logic has been modified in Phase 0. The additive
 [closure PR #1](https://github.com/ISPOai/runanywhere-sdks/pull/1) contains
@@ -236,6 +237,34 @@ supplied `Developer ID Application: ISPO Labs, Inc (4L8CX8AY6M)` identity with
 timestamp. This signing proof does not authorize publication or merge; the
 release script still exits 65 before building when `ISPO_CODESIGN_IDENTITY` is
 absent.
+
+### Lifecycle-repair candidate provenance
+
+The following values are from the repaired official candidate built from
+implementation source commit `bb81e449cc02f7c52f6e39428a1bc58bc7e701a7` on
+2026-08-29. Its package root is the versioned
+`ispo-local-inference-darwin-arm64-0.20.31-ispo.2/` directory. This later
+ledger amendment records a non-circular candidate: it was not present in the
+candidate already built from that source, and the candidate was neither
+uploaded, published, merged, nor released.
+
+| Candidate file / evidence | SHA-256 / exact result |
+| --- | --- |
+| Official archive | `c8b2f0cb9cad0a4638d3eafcdc698fd16ba400507346af4c632ff40f466d7ff6` |
+| Adjacent archive SHA-256 sidecar file | `4ac04d0c6d2afe422598a5e6d34c650101fed0768170ea952345f5b2768f8898`; its sole archive value is `c8b2f0cb9cad0a4638d3eafcdc698fd16ba400507346af4c632ff40f466d7ff6` |
+| Signed native addon | `3df5178393141f8511ded7af08d49785101d847b200bc76f155e4d0dee5835e1` |
+| Staged artifact manifest | `f1d5a44cb6af6cd16f17336d94d97773461268b2ca7ff2e6ac9734a031b091db` |
+| Input manifest | `a90e18c8984750e9bf197194cd3ec0e6b0093289e10a280ba861f7721a4d2e62` |
+| CycloneDX 1.5 SBOM | `6f9f8d32d579dec33e4a39bef7f4b44a9b5d4948eff765d5fc5ebd4883208cba` |
+| CycloneDX schema-validation record | `5052e88a380049c5b1ff79344443d119cb998fb51d7a63e3519db21bb54c59ab` |
+| Third-party notices | `127bf60484418714b6d10b30322ca15dd6a05799df4bb7fb6910e92f1c2e461e` |
+| Separately shipped TinyLlama fixture MIT record | `6bd23f49b01b86435022533403437eba85c5a487c2d8fb4fef2ecf9cf7ea9586` |
+
+The repaired candidate passed `unzip -t`, complete staged
+`metadata/artifact-manifest.sha256` verification, CycloneDX 1.5 schema
+validation, strict arm64 artifact audit, and strict Developer ID verification
+with hardened runtime and a secure Apple timestamp. Release packaging without
+an explicit signing identity exited 65 before build or artifact output.
 
 ## Phase 1 artifact recipe and gate
 
