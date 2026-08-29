@@ -60,6 +60,7 @@ and runtime sealing are explicitly Phase 1 work.
 | `899364dc62d1881d2c9a9303e7c440589b8b58a1` | Repairs the verified Phase 1 portability, cache pinning, signing-default, notices/SBOM, command recipe, and event-loop cancellation findings. It pins the public llama.cpp commit archive by SHA-256, adds the fork-owned static-registry patch/audit gate, enforces macOS 14.5 and portable ARM64 compilation, and moves ad-hoc packaging behind an explicitly named development command. | Clean archive-pinned configure/build; independent timer cancellation smoke; release-identity absence gate; final packaged-binary audit remains a required independent-review gate. | Awaiting independent PR review |
 | `2cd6033f41264d99f0ac0f8c560569215e5e3385` | Seals the Phase 1 inference-only preset, direct core + llama.cpp + narrow N-API adapter, static backend/source reduction patch, explicit licensed fixture helper, strict artifact audit, reproducible metadata, and fail-closed signing seam. The inherited commons, Electron facade, desktop adapter, server, downloads, telemetry, Connect, and private engines are not configured on this path. | Two clean public checkout roots built byte-identical unsigned addons; strict graph audit, licensed-fixture smoke, positive Metal, forced/injected CPU fallback, deterministic development archive, and official timestamped signing evidence are recorded below. | Awaiting independent exact-head Sol review |
 | `bb81e449cc02f7c52f6e39428a1bc58bc7e701a7` | Replaces namespace-global inference ownership with Node-API environment instance data, an asynchronous environment cleanup hook, and an idempotent finalizer. Cleanup cancels and drains stream work before model unload, backend shutdown, and `InferenceCore` destruction. Adds child-process ordinary-return coverage and preserves the documented versioned directory at the root of every ZIP. | Reproduced the prior exit-134 failure, then verified initialize, load/generate, controlled-error, explicit-shutdown, and in-flight stream cleanup exits without `SIGABRT` or `std::system_error`; strict artifact audit and official signed candidate provenance are recorded below. | Awaiting independent exact-head Sol review |
+| `1fe2f8f119d9bd3d457029d6f8d92cc560798706` | Introduces the Phase 1.1 internal pull stream: each host `next()` asynchronously yields no more than one bounded delta or one terminal record; cancellation, duplicate demand, abandonment, unload/reset/shutdown, and environment exit settle safely. It fixes the decode memory-slot failure by clearing the KV cache, assigning explicit positions, and stopping at the remaining context budget. It also fixes an ordinary-exit `SIGSEGV`: the cleanup hook now drains and removes its Node-API handle on the Node cleanup thread instead of a detached native thread. | Fresh public roots produced byte-identical unsigned ARM64 addons; artifact audit, signed package, manifest/SBOM/notices verification, a 100-process initialize/ordinary-exit stress check, and five consecutive six-cycle CPU diagnostics passed. This host has no usable Metal device, so positive Metal and injected-Metal-failure fallback remain required on an eligible host. | Awaiting independent exact-head Sol review |
 
 No upstream source logic has been modified in Phase 0. The additive
 [closure PR #1](https://github.com/ISPOai/runanywhere-sdks/pull/1) contains
@@ -70,12 +71,12 @@ nor its author claims that independent review has already happened.
 
 ## Package identity
 
-The only package identity established in Phase 0 is the private Electron/Node
-N-API source package:
+The current Phase 1.1 package identity is the private Electron/Node N-API
+source package:
 
 | Path | ISPO package name | Version | Publication state |
 | --- | --- | --- | --- |
-| `bindings/electron/native` | `@ispo/runanywhere-local-inference-native` | `0.20.31-ispo.2` | private; never publish from Phase 0/1 |
+| `bindings/electron/native` | `@ispo/runanywhere-local-inference-native` | `0.20.31-ispo.3` | private; never publish from Phase 0/1 |
 
 The future host-private runtime artifact is reserved as
 `@ispo/runanywhere-local-inference` with an ISPO prerelease or release version
@@ -197,7 +198,7 @@ download/HF-cache/cloud paths described above.
 
 ## Shipped artifacts
 
-The Phase 1 package layout is `ispo-local-inference-darwin-arm64-0.20.31-ispo.2/`: one native addon in `native/`, embedded Metal shaders inside that Mach-O, no third-party dylibs, notices in `notices/`, and input/SBOM/hash records in `metadata/`. The ZIP preserves that versioned directory as its top-level entry; extraction never spills `native/`, `notices/`, or `metadata/` into a desktop-signing parent. It is an input suitable for later nested desktop signing; this script signs only the native addon and never publishes a package or release.
+The Phase 1.1 package layout is `ispo-local-inference-darwin-arm64-0.20.31-ispo.3/`: one native addon in `native/`, embedded Metal shaders inside that Mach-O, no third-party dylibs, notices in `notices/`, and input/SBOM/hash records in `metadata/`. The ZIP preserves that versioned directory as its top-level entry; extraction never spills `native/`, `notices/`, or `metadata/` into a desktop-signing parent. It is an input suitable for later nested desktop signing; this script signs only the native addon and never publishes a package or release.
 
 `metadata/artifact-manifest.sha256` hashes every staged file except itself. The `.zip.sha256` is adjacent to, not inside, the archive, so the archive hash is non-circular. Secure timestamping makes an official Developer ID archive time-bearing; byte-identical reproducibility is instead proven on the unsigned addon and separately named ad-hoc development archive, while the official archive has deterministic layout and a strict signature gate.
 
@@ -266,19 +267,71 @@ validation, strict arm64 artifact audit, and strict Developer ID verification
 with hardened runtime and a secure Apple timestamp. Release packaging without
 an explicit signing identity exited 65 before build or artifact output.
 
+### Phase 1.1 pull-stream candidate provenance
+
+The following values are from the official Phase 1.1 candidate built from
+implementation source commit `1fe2f8f119d9bd3d457029d6f8d92cc560798706` on
+2026-08-29. Its `metadata/input-manifest.json` pins both that `forkHead` and
+the immutable Phase 1.1 base
+`70877eb0a3281ae5f5ddad0fa48d60e749746083`. This later ledger amendment is
+deliberately not included in that already-created archive, so the artifact
+hashes remain non-circular. The candidate was not uploaded, published, merged,
+or released.
+
+| Candidate file / evidence | SHA-256 / exact result |
+| --- | --- |
+| Official archive | `4342a9d2627b5076a5279b68f464de129d311ab0ea1e57c1bbf02d7806d42a5f` |
+| Adjacent archive SHA-256 sidecar file | `6f2ef890f1cadae7aec5c2ecd8436643978dac5d6aff7501f782ab657b7eca76`; its sole archive value is `4342a9d2627b5076a5279b68f464de129d311ab0ea1e57c1bbf02d7806d42a5f` |
+| Signed native addon | `3381acd126e6b7aa64d64fb8524088fae9aef0d10bd677d28029c7fd4bbad93b` |
+| Staged artifact manifest | `8c207d888d692ac3c914e7e6783a4ab03d6575698594529495af05c05bce580d` |
+| Input manifest | `d3b2382390bdbe3083baa9586ee0a09d658251820bce37b822f8b9d146a26ba9` |
+| CycloneDX 1.5 SBOM | `d0aada8f6a1b228a4a6f602685c68cc28320a4cb8c8a2661f95916c06dbb3520` |
+| CycloneDX schema-validation record | `5052e88a380049c5b1ff79344443d119cb998fb51d7a63e3519db21bb54c59ab` |
+
+The candidate passed `unzip -t`, complete staged
+`metadata/artifact-manifest.sha256` verification, strict arm64 artifact audit,
+and Developer ID verification with `TeamIdentifier=4L8CX8AY6M`, hardened
+runtime, and a secure Apple timestamp. Release packaging without an explicit
+identity exited 65 before it created an artifact. Five fresh CPU diagnostics
+passed with a six-cycle RSS plateau below 8 MiB and stalled consumers that held
+both token counts and generation elapsed time constant; positive Metal and the
+injected Metal-failure path were intentionally not treated as passed on this
+host because its Metal device probe returned null.
+
 ## Phase 1 artifact recipe and gate
 
-The artifact identity is `@ispo/runanywhere-local-inference@0.20.31-ispo.2`. It is a host-internal N-API module, not an Electron preload/renderer/global surface. Its only exports are `initialize`, `capabilities`, `loadExactLocalModel`, `complete`, `stream`, `cancel`, `unload`, `metrics`, `reset`, and `shutdown`.
+The artifact identity is `@ispo/runanywhere-local-inference@0.20.31-ispo.3`. It is a host-internal N-API module, not an Electron preload/renderer/global surface. Its only exports are `initialize`, `capabilities`, `loadExactLocalModel`, `complete`, `stream`, `cancel`, `unload`, `metrics`, `reset`, and `shutdown`.
+
+`stream(prompt, { maxTokens })` creates an opaque native pull-stream identity.
+It has one method, `next()`, whose Promise resolves to exactly one closed result:
+either `{ type: "delta", delta }` or `{ type: "terminal", finishReason,
+metrics }`. There is no callback argument or push queue. The host owns demand:
+no prompt evaluation or token decoding begins until the first `next()`, and a
+consumer that stops demanding cannot cause additional token generation. Only
+one `next()` can be active, one generation lease exists globally, and an
+independently callable `cancel()` terminalizes the lease exactly once. Terminal
+metrics expose prompt/output token counts, elapsed time, time-to-first-token,
+decode time, backend, cancellation state, cancellation count, and a distinct
+`stop`, `length`, `cancelled`, or `error` finish reason. The API never returns
+native pointers, paths, raw native exceptions, credentials, URLs, or discovery
+objects.
+
+Every generation clears its KV memory and sampler before prompt evaluation,
+uses explicit sequence positions, and limits output to the remaining context
+budget. A request that reaches that budget returns `length`, rather than
+attempting another decode and producing a memory-slot failure.
 
 Each Node-API environment owns its own adapter state through instance data; no
 namespace-static inference core survives into shared-library destruction. The
-N-API v8 asynchronous cleanup hook marks the environment unavailable, cancels
-active generation, waits for every queued/running stream lease to finish,
-unloads the model, shuts down and destroys `InferenceCore`, and only then
-releases the hook. The environment finalizer repeats the same idempotent
-shutdown path after the hook, including when initialization had failed after a
-partially constructed core. Explicit `shutdown()` uses that same path and may
-be called repeatedly before ordinary Node return.
+N-API v8 asynchronous cleanup hook runs its cancel-and-drain sequence on the
+Node cleanup thread: it cancels active generation, waits for every
+queued/running stream lease to finish, unloads the model, shuts down and
+destroys `InferenceCore`, and only then releases the hook. It never calls
+Node-API cleanup-handle removal from a detached native thread. The environment
+finalizer repeats the same idempotent shutdown path after the hook, including
+when initialization had failed after a partially constructed core. Explicit
+`shutdown()` uses that same path and may be called repeatedly before ordinary
+Node return.
 
 The selected source slice fetches only the public llama.cpp commit `79e2eb5eef131799ca6a2e2e342056a37a148df8`, archive SHA-256 `67d40b994c948d6536c50a1fe613cc0e4710af2567667344011a40f4dcbe72e9`, and applies `llama-static-backend-registry.patch`, SHA-256 `cf94d1a767693a88d29e5f68340970452d87dc6bceb1d4bf52a17886fbcb6200`. It removes `ggml-backend-dl.cpp` from the selected target and compiles a static CPU/Accelerate/Metal registry only.
 
@@ -292,7 +345,7 @@ From a clean public checkout, run the following in two independent scratch roots
 
 ```sh
 public_remote="https://github.com/ISPOai/runanywhere-sdks.git"
-head_ref="ispo/phase1-inference-artifact"
+head_ref="ispo/phase1-1-pull-stream"
 for root in /private/tmp/ispo-phase1-a /private/tmp/ispo-phase1-b; do
   git clone --branch "$head_ref" --single-branch "$public_remote" "$root"
   (cd "$root/bindings/electron/native" &&
@@ -305,7 +358,8 @@ for root in /private/tmp/ispo-phase1-a /private/tmp/ispo-phase1-b; do
       "$root/build/ispo-darwin-arm64-inference-release/ispo/inference/ispo_local_inference_native.node"
     ./ispo/inference/scripts/fetch-smoke-fixture.sh \
       /private/tmp/ispo-fixtures/tinyllama-15M-stories-Q2_K.gguf
-    ISPO_SMOKE_CYCLES=20 node ispo/inference/scripts/run-smoke.js \
+    ISPO_SMOKE_RUNS=5 ISPO_SMOKE_CYCLES=6 \
+      ./ispo/inference/scripts/run-fresh-smoke-series.sh \
       "$root/build/ispo-darwin-arm64-inference-release/ispo/inference/ispo_local_inference_native.node" \
       /private/tmp/ispo-fixtures/tinyllama-15M-stories-Q2_K.gguf
   )
@@ -315,21 +369,33 @@ cmp \
   /private/tmp/ispo-phase1-b/build/ispo-darwin-arm64-inference-release/ispo/inference/ispo_local_inference_native.node
 ```
 
-The smoke gate proves controlled JavaScript errors for URL, relative, missing, wrong-extension, unloaded, duplicate, cancellation, and shutdown cases; deterministic complete/stream token deltas and terminal metrics; repeated load/generate/cancel/unload/reset; bounded post-warmup RSS and clean process exit; positive Metal generation; explicit forced CPU/Accelerate; and the injected Metal-failure fallback. It also launches clean child Node processes for initialize then ordinary return, load/generate then ordinary return, a controlled early error then ordinary return, and explicit shutdown then ordinary return. A fifth child queues a stream and forces environment exit to prove cleanup cancellation/join behavior. Each child must exit zero without `SIGABRT` or `std::system_error` output.
+The smoke gate has no retry-on-failure wrapper: five fresh processes each run
+six full lifecycle cycles. It proves closed pull result shapes; zero additional
+output tokens and bounded RSS while a consumer stalls after one delta;
+deterministic resume; cancel before first demand; cancel while `next()` is
+pending; rejected duplicate `next()`; unload/reset/shutdown during a pending
+`next()`; stream abandonment/GC; and implicit Node exit. It also proves
+controlled JavaScript errors for URL, relative, missing, wrong-extension,
+unloaded, duplicate, cancellation, and shutdown cases; deterministic
+complete/stream token deltas and terminal metrics; repeated
+load/generate/cancel/unload/reset; bounded post-warmup RSS; positive Metal
+generation; explicit forced CPU/Accelerate; and injected Metal-failure
+fallback. Every child must exit zero without `SIGABRT` or `std::system_error`
+output.
 
 For a separately named ad-hoc development artifact only:
 
 ```sh
-ISPO_ARTIFACT_OUTPUT=/private/tmp/ispo-phase1-development \
+ISPO_ARTIFACT_OUTPUT=/private/tmp/ispo-phase1-1-development \
   ./ispo/inference/scripts/package-development-darwin-arm64.sh
-unzip -Z1 /private/tmp/ispo-phase1-development/ispo-local-inference-darwin-arm64-0.20.31-ispo.2-development.zip | \
-  grep -E '^ispo-local-inference-darwin-arm64-0.20.31-ispo.2-development/(metadata|native|notices)/'
+unzip -Z1 /private/tmp/ispo-phase1-1-development/ispo-local-inference-darwin-arm64-0.20.31-ispo.3-development.zip | \
+  grep -E '^ispo-local-inference-darwin-arm64-0.20.31-ispo.3-development/(metadata|native|notices)/'
 ```
 
 For an official release candidate, an explicitly supplied Developer ID identity is mandatory. The release script fails before build/output creation when absent, signs with `--timestamp --options runtime`, requires a TeamIdentifier, hardened-runtime flag, strict verification, and a secure timestamp, and has no ad-hoc fallback:
 
 ```sh
-ISPO_ARTIFACT_OUTPUT=/private/tmp/ispo-phase1-release \
+ISPO_ARTIFACT_OUTPUT=/private/tmp/ispo-phase1-1-release \
 ISPO_CODESIGN_IDENTITY='Developer ID Application: ISPO Labs, Inc (4L8CX8AY6M)' \
   ./ispo/inference/scripts/package-darwin-arm64.sh
 ```

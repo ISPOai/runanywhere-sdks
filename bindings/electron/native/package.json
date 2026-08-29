@@ -1,6 +1,6 @@
 {
   "name": "@ispo/runanywhere-local-inference-native",
-  "version": "0.20.31-ispo.2",
+  "version": "0.20.31-ispo.3",
   "description": "ISPO local-inference native N-API addon over the rac_* C ABI.",
   "private": true,
   "license": "SEE LICENSE IN ../../../LICENSE",

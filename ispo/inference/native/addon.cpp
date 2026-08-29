@@ -8,7 +8,6 @@
 #include <mutex>
 #include <stdexcept>
 #include <string>
-#include <thread>
 #include <utility>
 
 #include "inference_core.h"
@@ -18,6 +17,8 @@ namespace {
 using ispo::inference::InferenceCore;
 using ispo::inference::LoadOptions;
 using ispo::inference::Metrics;
+using ispo::inference::StreamSession;
+using ispo::inference::StreamStep;
 
 template <typename Callback>
 Napi::Value synchronous_callback(const Napi::CallbackInfo& info, Callback&& callback) {
@@ -25,8 +26,8 @@ Napi::Value synchronous_callback(const Napi::CallbackInfo& info, Callback&& call
         return std::forward<Callback>(callback)();
     } catch (const Napi::Error& error) {
         error.ThrowAsJavaScriptException();
-    } catch (const std::exception& error) {
-        Napi::Error::New(info.Env(), error.what()).ThrowAsJavaScriptException();
+    } catch (const std::exception&) {
+        Napi::Error::New(info.Env(), "local inference operation failed").ThrowAsJavaScriptException();
     } catch (...) {
         Napi::Error::New(info.Env(), "local inference adapter failed").ThrowAsJavaScriptException();
     }
@@ -35,6 +36,8 @@ Napi::Value synchronous_callback(const Napi::CallbackInfo& info, Callback&& call
 
 class EnvironmentState final {
   public:
+    enum class NextLease { kQueued, kDuplicate, kTerminal };
+
     EnvironmentState() = default;
     EnvironmentState(const EnvironmentState&) = delete;
     EnvironmentState& operator=(const EnvironmentState&) = delete;
@@ -45,7 +48,7 @@ class EnvironmentState final {
             throw std::runtime_error("local inference environment is shutting down");
         }
         if (!core_) {
-            core_ = std::make_unique<InferenceCore>();
+            core_ = std::make_shared<InferenceCore>();
         }
         return *core_;
     }
@@ -54,110 +57,159 @@ class EnvironmentState final {
         try {
             core().initialize(force_cpu);
         } catch (...) {
-            // An initialization failure can leave a partially configured backend.
-            // Retire it before allowing the caller to retry with a new core.
             shutdown_core(false);
             throw;
         }
     }
 
-    void queue_stream() {
-        std::lock_guard lock(mutex_);
-        if (environment_teardown_ || shutdown_in_progress_) {
-            throw std::runtime_error("local inference environment is shutting down");
-        }
-        if (!core_) {
-            core_ = std::make_unique<InferenceCore>();
-        }
-        ++pending_streams_;
+    [[nodiscard]] std::shared_ptr<StreamSession> start_stream(const std::string& prompt,
+                                                                uint32_t max_tokens) {
+        return core().start_stream(prompt, max_tokens);
     }
 
-    [[nodiscard]] InferenceCore* stream_core() noexcept {
+    [[nodiscard]] NextLease acquire_next(const std::shared_ptr<StreamSession>& stream) {
         std::lock_guard lock(mutex_);
         if (environment_teardown_ || shutdown_in_progress_) {
-            return nullptr;
+            stream->request_cancel();
+            return NextLease::kTerminal;
         }
-        return core_.get();
+        switch (stream->acquire_demand()) {
+            case StreamSession::Demand::kAccepted:
+                ++pending_nexts_;
+                return NextLease::kQueued;
+            case StreamSession::Demand::kDuplicate:
+                return NextLease::kDuplicate;
+            case StreamSession::Demand::kTerminal:
+                return NextLease::kTerminal;
+        }
+        return NextLease::kTerminal;
     }
 
-    void finish_stream() noexcept {
+    [[nodiscard]] StreamStep execute_next(const std::shared_ptr<StreamSession>& stream) noexcept {
+        std::shared_ptr<InferenceCore> active_core;
+        {
+            std::lock_guard lock(mutex_);
+            active_core = core_;
+        }
+        if (active_core == nullptr) {
+            return stream->terminal_step();
+        }
+        return active_core->next(stream);
+    }
+
+    void finish_next() noexcept {
         std::lock_guard lock(mutex_);
-        if (pending_streams_ == 0) {
+        if (pending_nexts_ == 0) {
             return;
         }
-        --pending_streams_;
-        if (pending_streams_ == 0) {
-            streams_drained_.notify_all();
+        --pending_nexts_;
+        if (pending_nexts_ == 0) {
+            nexts_drained_.notify_all();
         }
     }
 
     void cancel() noexcept {
-        std::lock_guard lock(mutex_);
-        if (core_) {
-            core_->cancel();
+        std::shared_ptr<InferenceCore> active_core;
+        {
+            std::lock_guard lock(mutex_);
+            active_core = core_;
         }
+        if (active_core != nullptr) {
+            active_core->cancel();
+        }
+    }
+
+    void abandon_stream(const std::shared_ptr<StreamSession>& stream) noexcept {
+        std::shared_ptr<InferenceCore> active_core;
+        {
+            std::lock_guard lock(mutex_);
+            active_core = core_;
+        }
+        if (active_core != nullptr) {
+            active_core->abandon_stream(stream);
+        } else {
+            stream->request_cancel();
+        }
+    }
+
+    void unload() noexcept { with_existing_core([](InferenceCore& core) { core.unload(); }); }
+
+    void reset() noexcept { with_existing_core([](InferenceCore& core) { core.reset(); }); }
+
+    [[nodiscard]] Metrics metrics() const {
+        std::lock_guard lock(mutex_);
+        return core_ ? core_->metrics() : Metrics{};
     }
 
     void shutdown() noexcept { shutdown_core(false); }
 
     void begin_environment_cleanup(napi_async_cleanup_hook_handle hook) noexcept {
-        {
-            std::lock_guard lock(mutex_);
-            environment_teardown_ = true;
-            if (core_) {
-                core_->cancel();
-            }
-        }
-
-        try {
-            std::thread([this, hook] {
-                shutdown_core(true);
-                (void)napi_remove_async_cleanup_hook(hook);
-            }).detach();
-        } catch (...) {
-            // Thread creation is the only expected failure here. The synchronous
-            // fallback retains the same ordering and never leaves backend state
-            // for C++ static destruction.
-            shutdown_core(true);
-            (void)napi_remove_async_cleanup_hook(hook);
-        }
+        // The Node-API cleanup-handle destructor schedules work on the owning
+        // environment. Calling it from a detached native thread races Node's
+        // environment teardown on ordinary process exit. The worker lease is
+        // released from Execute(), before its JavaScript completion callback,
+        // so draining here does not require the event loop to re-enter JS.
+        shutdown_core(true);
+        (void)napi_remove_async_cleanup_hook(hook);
     }
 
     void finalize_environment() noexcept { shutdown_core(true); }
 
   private:
-    void shutdown_core(bool permanent) noexcept {
-        std::unique_ptr<InferenceCore> retiring_core;
+    template <typename Callback>
+    void with_existing_core(Callback&& callback) noexcept {
+        std::shared_ptr<InferenceCore> active_core;
+        {
+            std::lock_guard lock(mutex_);
+            if (environment_teardown_ || shutdown_in_progress_) {
+                return;
+            }
+            active_core = core_;
+        }
+        if (active_core == nullptr) {
+            return;
+        }
         try {
-            {
-                std::unique_lock lock(mutex_);
-                if (permanent) {
-                    environment_teardown_ = true;
-                }
-                if (shutdown_in_progress_) {
-                    shutdown_complete_.wait(lock, [this] { return !shutdown_in_progress_; });
-                    return;
-                }
-                shutdown_in_progress_ = true;
-                if (core_) {
-                    core_->cancel();
-                }
-                streams_drained_.wait(lock, [this] { return pending_streams_ == 0; });
-                retiring_core = std::move(core_);
-            }
-
-            if (retiring_core) {
-                try {
-                    retiring_core->unload();
-                } catch (...) {
-                }
-                try {
-                    retiring_core->shutdown();
-                } catch (...) {
-                }
-            }
+            std::forward<Callback>(callback)(*active_core);
         } catch (...) {
-            // Node-API cleanup callbacks must not throw across the C boundary.
+        }
+    }
+
+    void shutdown_core(bool permanent) noexcept {
+        std::shared_ptr<InferenceCore> active_core;
+        {
+            std::unique_lock lock(mutex_);
+            if (permanent) {
+                environment_teardown_ = true;
+            }
+            if (shutdown_in_progress_) {
+                shutdown_complete_.wait(lock, [this] { return !shutdown_in_progress_; });
+                return;
+            }
+            shutdown_in_progress_ = true;
+            active_core = core_;
+        }
+
+        if (active_core != nullptr) {
+            active_core->cancel();
+        }
+
+        std::shared_ptr<InferenceCore> retiring_core;
+        {
+            std::unique_lock lock(mutex_);
+            nexts_drained_.wait(lock, [this] { return pending_nexts_ == 0; });
+            retiring_core = std::move(core_);
+        }
+
+        if (retiring_core) {
+            try {
+                retiring_core->unload();
+            } catch (...) {
+            }
+            try {
+                retiring_core->shutdown();
+            } catch (...) {
+            }
         }
 
         {
@@ -167,11 +219,11 @@ class EnvironmentState final {
         shutdown_complete_.notify_all();
     }
 
-    std::mutex mutex_;
-    std::condition_variable streams_drained_;
+    mutable std::mutex mutex_;
+    std::condition_variable nexts_drained_;
     std::condition_variable shutdown_complete_;
-    std::unique_ptr<InferenceCore> core_;
-    uint32_t pending_streams_ = 0;
+    std::shared_ptr<InferenceCore> core_;
+    uint32_t pending_nexts_ = 0;
     bool environment_teardown_ = false;
     bool shutdown_in_progress_ = false;
 };
@@ -181,8 +233,8 @@ void environment_cleanup(napi_async_cleanup_hook_handle hook, void* data) {
 }
 
 void environment_state_finalizer(napi_env, void* data, void*) {
-    auto* state = static_cast<EnvironmentState*>(data);
-    state->finalize_environment();
+    auto* state = static_cast<std::shared_ptr<EnvironmentState>*>(data);
+    (*state)->finalize_environment();
     delete state;
 }
 
@@ -191,110 +243,171 @@ EnvironmentState& environment_state(Napi::Env env) {
     if (napi_get_instance_data(env, &data) != napi_ok || data == nullptr) {
         throw std::runtime_error("local inference environment state is unavailable");
     }
-    return *static_cast<EnvironmentState*>(data);
+    return **static_cast<std::shared_ptr<EnvironmentState>*>(data);
+}
+
+std::shared_ptr<EnvironmentState> environment_state_ptr(Napi::Env env) {
+    void* data = nullptr;
+    if (napi_get_instance_data(env, &data) != napi_ok || data == nullptr) {
+        throw std::runtime_error("local inference environment state is unavailable");
+    }
+    return *static_cast<std::shared_ptr<EnvironmentState>*>(data);
 }
 
 Napi::Object metrics_object(Napi::Env env, const Metrics& metrics) {
     Napi::Object result = Napi::Object::New(env);
     result.Set("promptTokens", Napi::Number::New(env, static_cast<double>(metrics.prompt_tokens)));
+    result.Set("outputTokens", Napi::Number::New(env, static_cast<double>(metrics.output_tokens)));
+    // Retained for Phase 1 callers; outputTokens is the explicit pull-stream contract.
     result.Set("generatedTokens", Napi::Number::New(env, static_cast<double>(metrics.generated_tokens)));
     result.Set("cancelledGenerations",
                Napi::Number::New(env, static_cast<double>(metrics.cancelled_generations)));
     result.Set("elapsedMs", Napi::Number::New(env, metrics.elapsed_ms));
+    result.Set("ttftMs", metrics.has_first_token ? Napi::Number::New(env, metrics.ttft_ms)
+                                                   : env.Null());
+    result.Set("decodeMs", Napi::Number::New(env, metrics.decode_ms));
     result.Set("backend", Napi::String::New(env, ispo::inference::backend_name(metrics.backend)));
+    result.Set("cancelled", Napi::Boolean::New(env, metrics.cancelled));
+    result.Set("finishReason",
+               Napi::String::New(env, ispo::inference::finish_reason_name(metrics.finish_reason)));
     return result;
 }
 
-Napi::Object capabilities_object(Napi::Env env) {
-    const auto& core = environment_state(env).core();
+Napi::Object stream_step_object(Napi::Env env, const StreamStep& step) {
     Napi::Object result = Napi::Object::New(env);
-    result.Set("metalCompiled", Napi::Boolean::New(env, core.metal_compiled()));
-    result.Set("metalInitialized", Napi::Boolean::New(env, core.metal_initialized()));
-    result.Set("loaded", Napi::Boolean::New(env, core.loaded()));
-    result.Set("backend", Napi::String::New(env, ispo::inference::backend_name(core.backend())));
+    if (step.type == StreamStep::Type::kDelta) {
+        result.Set("type", Napi::String::New(env, "delta"));
+        result.Set("delta", Napi::String::New(env, step.delta));
+        return result;
+    }
+    result.Set("type", Napi::String::New(env, "terminal"));
+    result.Set("finishReason",
+               Napi::String::New(env, ispo::inference::finish_reason_name(step.metrics.finish_reason)));
+    result.Set("metrics", metrics_object(env, step.metrics));
     return result;
 }
 
-class StreamWorker final : public Napi::AsyncProgressQueueWorker<std::string> {
+class NextWorker final : public Napi::AsyncWorker {
   public:
-    StreamWorker(Napi::Env env, EnvironmentState& state, std::string prompt, uint32_t max_tokens,
-                 Napi::Function on_delta, Napi::Function on_terminal)
-        : Napi::AsyncProgressQueueWorker<std::string>(env),
-          state_(state),
-          prompt_(std::move(prompt)),
-          max_tokens_(max_tokens),
-          on_delta_(Napi::Persistent(on_delta)),
-          on_terminal_(Napi::Persistent(on_terminal)) {}
+    NextWorker(Napi::Env env, std::shared_ptr<EnvironmentState> state,
+               std::shared_ptr<StreamSession> stream, Napi::Promise::Deferred deferred)
+        : Napi::AsyncWorker(env),
+          state_(std::move(state)),
+          stream_(std::move(stream)),
+          deferred_(deferred) {}
 
-    ~StreamWorker() override {
-        on_delta_.Reset();
-        on_terminal_.Reset();
-    }
-
-    void Execute(const ExecutionProgress& progress) override {
-        InferenceCore* core = nullptr;
+    void Execute() override {
         try {
-            core = state_.stream_core();
-            if (core == nullptr) {
-                SetError("local inference stream failed");
-            } else {
-                core->stream(prompt_, max_tokens_, [&progress](const std::string& delta) {
-                    progress.Send(&delta, 1);
-                });
-                terminal_metrics_ = core->metrics();
-            }
+            result_ = state_->execute_next(stream_);
         } catch (...) {
-            if (core != nullptr) {
-                try {
-                    terminal_metrics_ = core->metrics();
-                } catch (...) {
-                }
-            }
-            SetError("local inference stream failed");
+            result_ = stream_->terminal_step();
         }
-        finish_stream_once();
+        finish_once();
     }
 
-    void OnWorkComplete(Napi::Env env, napi_status status) override {
-        // A queued worker may be cancelled before Execute starts. Balance the
-        // environment lease in either path so teardown cannot wait forever.
-        finish_stream_once();
-        Napi::AsyncProgressQueueWorker<std::string>::OnWorkComplete(env, status);
-    }
-
-    void OnProgress(const std::string* deltas, size_t count) override {
-        const Napi::Env env = on_delta_.Env();
-        for (size_t index = 0; index < count; ++index) {
-            on_delta_.Call({Napi::String::New(env, deltas[index])});
+    void OnWorkComplete(Napi::Env env, napi_status) override {
+        finish_once();
+        // A cancellation can race a completed worker before libuv delivers this
+        // completion callback on the JavaScript thread. Never publish the stale
+        // delta in that window: the one terminal state is authoritative.
+        if (result_.type == StreamStep::Type::kDelta && stream_->cancellation_requested()) {
+            result_ = stream_->terminal_step();
         }
-    }
-
-    void OnOK() override {
-        const Napi::Env env = on_terminal_.Env();
-        on_terminal_.Call({env.Null(), metrics_object(env, terminal_metrics_)});
-    }
-
-    void OnError(const Napi::Error&) override {
-        const Napi::Env env = on_terminal_.Env();
-        on_terminal_.Call(
-            {Napi::String::New(env, "local inference stream failed"), metrics_object(env, terminal_metrics_)});
+        deferred_.Resolve(stream_step_object(env, result_));
     }
 
   private:
-    void finish_stream_once() noexcept {
+    void finish_once() noexcept {
         bool expected = false;
-        if (stream_finished_.compare_exchange_strong(expected, true)) {
-            state_.finish_stream();
+        if (finished_.compare_exchange_strong(expected, true)) {
+            state_->finish_next();
         }
     }
 
-    EnvironmentState& state_;
-    std::string prompt_;
-    uint32_t max_tokens_;
-    Napi::FunctionReference on_delta_;
-    Napi::FunctionReference on_terminal_;
-    std::atomic<bool> stream_finished_{false};
-    Metrics terminal_metrics_;
+    std::shared_ptr<EnvironmentState> state_;
+    std::shared_ptr<StreamSession> stream_;
+    Napi::Promise::Deferred deferred_;
+    std::atomic<bool> finished_{false};
+    StreamStep result_;
+};
+
+struct StreamBinding {
+    std::shared_ptr<EnvironmentState> environment;
+    std::shared_ptr<StreamSession> stream;
+};
+
+class PullStreamHandle final : public Napi::ObjectWrap<PullStreamHandle> {
+  public:
+    explicit PullStreamHandle(const Napi::CallbackInfo& info) : Napi::ObjectWrap<PullStreamHandle>(info) {
+        if (info.Length() != 1 || !info[0].IsExternal()) {
+            throw Napi::TypeError::New(info.Env(), "local inference stream cannot be constructed directly");
+        }
+        std::unique_ptr<StreamBinding> binding(
+            info[0].As<Napi::External<StreamBinding>>().Data());
+        if (!binding || !binding->environment || !binding->stream) {
+            throw Napi::Error::New(info.Env(), "local inference stream is unavailable");
+        }
+        environment_ = std::move(binding->environment);
+        stream_ = std::move(binding->stream);
+    }
+
+    ~PullStreamHandle() override = default;
+
+    static Napi::Object New(Napi::Env env, std::shared_ptr<EnvironmentState> environment,
+                            std::shared_ptr<StreamSession> stream) {
+        auto binding = std::make_unique<StreamBinding>(
+            StreamBinding{.environment = std::move(environment), .stream = std::move(stream)});
+        Napi::Function constructor = DefineClass(
+            env, "InternalPullStream", {InstanceMethod<&PullStreamHandle::Next>("next")});
+        Napi::Object object = constructor.New(
+            {Napi::External<StreamBinding>::New(env, binding.get())});
+        (void)binding.release();
+        return object;
+    }
+
+    void Finalize(Napi::Env) override {
+        if (environment_ && stream_) {
+            environment_->abandon_stream(stream_);
+        }
+        stream_.reset();
+        environment_.reset();
+    }
+
+  private:
+    Napi::Value Next(const Napi::CallbackInfo& info) {
+        const Napi::Promise::Deferred deferred = Napi::Promise::Deferred::New(info.Env());
+        if (info.Length() != 0) {
+            deferred.Reject(
+                Napi::TypeError::New(info.Env(), "local inference stream next accepts no arguments").Value());
+            return deferred.Promise();
+        }
+        if (!environment_ || !stream_) {
+            deferred.Reject(Napi::Error::New(info.Env(), "local inference stream is unavailable").Value());
+            return deferred.Promise();
+        }
+
+        const EnvironmentState::NextLease lease = environment_->acquire_next(stream_);
+        if (lease == EnvironmentState::NextLease::kTerminal) {
+            deferred.Resolve(stream_step_object(info.Env(), stream_->terminal_step()));
+            return deferred.Promise();
+        }
+        if (lease == EnvironmentState::NextLease::kDuplicate) {
+            deferred.Reject(Napi::Error::New(info.Env(), "local inference stream next is already pending").Value());
+            return deferred.Promise();
+        }
+
+        try {
+            auto* worker = new NextWorker(info.Env(), environment_, stream_, deferred);
+            worker->Queue();
+        } catch (...) {
+            environment_->finish_next();
+            deferred.Reject(Napi::Error::New(info.Env(), "local inference stream could not start").Value());
+        }
+        return deferred.Promise();
+    }
+
+    std::shared_ptr<EnvironmentState> environment_;
+    std::shared_ptr<StreamSession> stream_;
 };
 
 Napi::Object options(const Napi::CallbackInfo& info, size_t index) {
@@ -348,7 +461,15 @@ Napi::Value Initialize(const Napi::CallbackInfo& info) {
 }
 
 Napi::Value Capabilities(const Napi::CallbackInfo& info) {
-    return synchronous_callback(info, [&info] { return capabilities_object(info.Env()); });
+    return synchronous_callback(info, [&info] {
+        const auto& core = environment_state(info.Env()).core();
+        Napi::Object result = Napi::Object::New(info.Env());
+        result.Set("metalCompiled", Napi::Boolean::New(info.Env(), core.metal_compiled()));
+        result.Set("metalInitialized", Napi::Boolean::New(info.Env(), core.metal_initialized()));
+        result.Set("loaded", Napi::Boolean::New(info.Env(), core.loaded()));
+        result.Set("backend", Napi::String::New(info.Env(), ispo::inference::backend_name(core.backend())));
+        return result;
+    });
 }
 
 Napi::Value LoadExactLocalModel(const Napi::CallbackInfo& info) {
@@ -363,7 +484,7 @@ Napi::Value LoadExactLocalModel(const Napi::CallbackInfo& info) {
             boolean_option(config, "injectMetalFailureForTest", false);
         environment_state(info.Env()).core().load_exact_local_model(
             info[0].As<Napi::String>().Utf8Value(), load_options);
-        return capabilities_object(info.Env());
+        return Capabilities(info).As<Napi::Object>();
     });
 }
 
@@ -379,25 +500,14 @@ Napi::Value Complete(const Napi::CallbackInfo& info) {
 
 Napi::Value Stream(const Napi::CallbackInfo& info) {
     return synchronous_callback(info, [&info] {
-        require_string(info, 0, "stream(prompt, options, onDelta, onTerminal)");
-        if (info.Length() < 4 || !info[2].IsFunction() || !info[3].IsFunction()) {
-            throw Napi::TypeError::New(info.Env(),
-                                       "stream(prompt, options, onDelta, onTerminal) requires callbacks");
+        require_string(info, 0, "stream(prompt, options?)");
+        if (info.Length() > 2) {
+            throw Napi::TypeError::New(info.Env(), "stream(prompt, options?)");
         }
         const uint32_t max_tokens = uint_option(options(info, 1), "maxTokens", 32);
-        auto& state = environment_state(info.Env());
-        state.queue_stream();
-        try {
-            auto worker = std::make_unique<StreamWorker>(
-                info.Env(), state, info[0].As<Napi::String>().Utf8Value(), max_tokens,
-                info[2].As<Napi::Function>(), info[3].As<Napi::Function>());
-            worker->Queue();
-            worker.release();
-        } catch (...) {
-            state.finish_stream();
-            throw;
-        }
-        return info.Env().Undefined();
+        const auto environment = environment_state_ptr(info.Env());
+        const auto stream = environment->start_stream(info[0].As<Napi::String>().Utf8Value(), max_tokens);
+        return PullStreamHandle::New(info.Env(), environment, stream);
     });
 }
 
@@ -410,20 +520,20 @@ Napi::Value Cancel(const Napi::CallbackInfo& info) {
 
 Napi::Value Unload(const Napi::CallbackInfo& info) {
     return synchronous_callback(info, [&info] {
-        environment_state(info.Env()).core().unload();
+        environment_state(info.Env()).unload();
         return info.Env().Undefined();
     });
 }
 
-Napi::Value Metrics(const Napi::CallbackInfo& info) {
+Napi::Value MetricsMethod(const Napi::CallbackInfo& info) {
     return synchronous_callback(info, [&info] {
-        return metrics_object(info.Env(), environment_state(info.Env()).core().metrics());
+        return metrics_object(info.Env(), environment_state(info.Env()).metrics());
     });
 }
 
 Napi::Value Reset(const Napi::CallbackInfo& info) {
     return synchronous_callback(info, [&info] {
-        environment_state(info.Env()).core().reset();
+        environment_state(info.Env()).reset();
         return info.Env().Undefined();
     });
 }
@@ -436,15 +546,16 @@ Napi::Value Shutdown(const Napi::CallbackInfo& info) {
 }
 
 Napi::Object Register(Napi::Env env, Napi::Object exports) {
-    auto state = std::make_unique<EnvironmentState>();
-    if (napi_set_instance_data(env, state.get(), environment_state_finalizer, nullptr) != napi_ok) {
+    auto state = std::make_shared<EnvironmentState>();
+    auto* state_holder = new std::shared_ptr<EnvironmentState>(std::move(state));
+    if (napi_set_instance_data(env, state_holder, environment_state_finalizer, nullptr) != napi_ok) {
+        delete state_holder;
         Napi::Error::New(env, "failed to allocate local inference environment state")
             .ThrowAsJavaScriptException();
         return exports;
     }
-    EnvironmentState* const registered_state = state.release();
-    if (napi_add_async_cleanup_hook(env, environment_cleanup, registered_state, nullptr) != napi_ok) {
-        registered_state->shutdown();
+    if (napi_add_async_cleanup_hook(env, environment_cleanup, state_holder->get(), nullptr) != napi_ok) {
+        (*state_holder)->shutdown();
         Napi::Error::New(env, "failed to register local inference cleanup hook")
             .ThrowAsJavaScriptException();
         return exports;
@@ -457,7 +568,7 @@ Napi::Object Register(Napi::Env env, Napi::Object exports) {
     exports.Set("stream", Napi::Function::New(env, Stream));
     exports.Set("cancel", Napi::Function::New(env, Cancel));
     exports.Set("unload", Napi::Function::New(env, Unload));
-    exports.Set("metrics", Napi::Function::New(env, Metrics));
+    exports.Set("metrics", Napi::Function::New(env, MetricsMethod));
     exports.Set("reset", Napi::Function::New(env, Reset));
     exports.Set("shutdown", Napi::Function::New(env, Shutdown));
     return exports;
