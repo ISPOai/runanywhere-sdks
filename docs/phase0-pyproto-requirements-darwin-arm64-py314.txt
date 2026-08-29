@@ -1,0 +1,7 @@
+# Phase 0 public Darwin ARM64 codegen tool lock.
+# Used with: python -m pip install --require-hashes --only-binary=:all: -r <this file>
+# Target interpreter: CPython 3.14 on macOS 11+ ARM64.
+protobuf==6.33.0 \
+    --hash=sha256:905b07a65f1a4b72412314082c7dbfae91a9e8b68a0cc1577515f8df58ecf455
+PyYAML==6.0.3 \
+    --hash=sha256:34d5fcd24b8445fadc33f9cf348c1047101756fd760b4dacb5c3e99755703310

@@ -39,13 +39,23 @@ not be fetched, bundled, or treated as build prerequisites:
 - ONNX, Sherpa, CoreML/MLX, image generation, and every non-Electron SDK
   surface.
 
+This is a prerequisite and shipment boundary, not a claim about every source
+file compiled by the inherited upstream target. The Phase 0 proof still
+compiles dormant public download/Hugging Face-cache code, cloud-STT code, and
+HF-token setter APIs from the selected upstream core. They neither fetched nor
+required a token, control-plane URL, private engine pack, or vendor-only
+runner in the clean build. They are not shipped by Phase 0; source reduction
+and runtime sealing are explicitly Phase 1 work.
+
 ## Downstream patch ledger
 
-| Patch / commit | Scope | Status |
+| Patch / commit | Purpose and reviewed delta | Reviewer / evidence | Status |
 | --- | --- | --- |
-| `0001-ispo-native-package-identity` | ISPO-owned private Electron/Node N-API package identity and version | Reviewed Phase 0 downstream patch |
-| `0002-ispo-provenance-policy-and-notices` | This document; upstream-update policy; third-party notices | Reviewed Phase 0 downstream patch |
-| Phase 1 runtime patch set | Inference-only CMake preset, source reduction, sealing, packaging | Not yet produced — Phase 1 owns it |
+| `98a0ca76a2c0d5219ce5ca11cf3eea65442d4cc0` | Changes only `bindings/electron/native/package.json` and `package-lock.json`: makes the selected private N-API source package `@ispo/runanywhere-local-inference-native@0.20.31-ispo.0`. | Phase 0 repair-owner review: `git show --stat`, manifest/lock identity check, and clean `npm ci --ignore-scripts`; no associated GitHub pull request exists. | Reviewed direct downstream commit |
+| `5b98189417b0b0ed6c84b6c5233a50976489918f` | Adds this record, the upstream-update policy, and third-party notice; does not change upstream runtime source. | Phase 0 repair-owner review: exact diff audit, license comparison, and public-build record; no associated GitHub pull request exists. | Reviewed direct downstream commit |
+| `37ee854ab6b0c73b9cc6f85ddaf0d5c03a3c663e` | Resolves the Phase 0 llama.cpp tag to its source commit in this record. | Phase 0 repair-owner review: `git ls-remote`/fresh configure resolved the recorded commit; no associated GitHub pull request exists. | Reviewed direct downstream commit |
+| `PENDING_REPAIR_COMMIT` | Synchronizes the native package-lock header and adds the complete reproducibility, license, and repair evidence record. Replace this marker with the immutable commit ID as part of the same reviewed commit. | Phase 0 repair-owner review: clean-checkout verification commands and outputs recorded below. | Pending commit finalization |
+| Phase 1 runtime patch set | Inference-only CMake preset, source reduction, sealing, packaging. | Not yet produced. | Phase 1 owns it |
 
 No upstream source logic has been modified in Phase 0. This ledger must name
 each downstream commit, its purpose, and the reviewed upstream delta before it
@@ -70,13 +80,47 @@ before producing any package or artifact.
 
 ## Pinned inputs and build flags
 
-| Input | Pin |
-| --- | --- |
-| RunAnywhere source | Git commit `00e879fa818111054c02c8ad1f1a0398a4738f92` |
-| llama.cpp source | `https://github.com/RunanywhereAI/llama.cpp.git` tag `runanywhere-b10453.4`, resolved in the Phase 0 public build to commit `79e2eb5eef131799ca6a2e2e342056a37a148df8` |
-| Node N-API source dependencies | `node-addon-api` `8.9.0`; `node-api-headers` `1.9.0` (from `bindings/electron/native/package-lock.json`) |
-| Electron source dependency lock | Electron `43.1.1`; TypeScript `5.9.3` (from `bindings/electron/package-lock.json`) |
-| Public-source proof flags | `RAC_BUILD_BACKENDS=ON`, `RAC_BACKEND_LLAMACPP=ON`, `RAC_BUILD_ELECTRON_ADDON=ON`, `RAC_DESKTOP_ADAPTER=OFF`, `RAC_BUILD_SERVER=OFF`, `RAC_BUILD_PLATFORM=OFF`, `RAC_BACKEND_RAG=OFF`, `RAC_STATIC_PLUGINS=ON`, `GGML_METAL=OFF`, `RAC_GPU_VULKAN=OFF` |
+The git object IDs below are immutable source-content identities. Release and
+package assets additionally record their delivery URL and SHA-256/SRI. This
+ledger covers the dependencies actually fetched or selected by the Darwin
+ARM64 Phase 0 configure; it is not a shipping bill of materials.
+
+| Input | Immutable origin and resolved identity | License / integrity |
+| --- | --- | --- |
+| RunAnywhere source | `https://github.com/RunanywhereAI/runanywhere-sdks.git` commit `00e879fa818111054c02c8ad1f1a0398a4738f92` | Root `LICENSE` SHA-256 `45506e9fbd89370dae9ad4b132cf6d2cc8e26322fa4d9856e26474ff7a3c5acd` |
+| llama.cpp + ggml | `https://github.com/RunanywhereAI/llama.cpp.git`, mutable compatibility tag `runanywhere-b10453.4` resolved to commit `79e2eb5eef131799ca6a2e2e342056a37a148df8` | MIT; preserve its license/notices |
+| Abseil | `https://github.com/abseil/abseil-cpp.git` tag `20250814.1` resolved to commit `255c84dadd029fd8ad25c5efb5933e47beaa00c7` | Apache-2.0 |
+| protobuf C++ | `https://github.com/protocolbuffers/protobuf.git` tag `v35.1` resolved to commit `35cd01f9fe9afbeea38cc7b979a3b6bfcde82c03` | BSD-3-Clause |
+| nlohmann/json | `https://github.com/nlohmann/json.git` tag `v3.12.0` resolved to commit `55f93686c01528224f448c19128836e7df245f72` | MIT |
+| libarchive | `https://github.com/libarchive/libarchive.git` tag `v3.8.7` resolved to commit `ded82291ab41d5e355831b96b0e1ff49e24d8939` | BSD-2-Clause |
+| protoc codegen archive | `https://github.com/protocolbuffers/protobuf/releases/download/v35.1/protoc-35.1-osx-aarch_64.zip` | SHA-256 `193289af0470c6a1aada357d4fba0bbf8d78bfaac8b5e42ca30af2ef75583de2`; BSD-3-Clause |
+| Python codegen lock | `docs/phase0-pyproto-requirements-darwin-arm64-py314.txt`: `protobuf==6.33.0` and `PyYAML==6.0.3`, installed only with `--require-hashes` | protobuf BSD-3-Clause wheel SHA-256 `905b07a65f1a4b72412314082c7dbfae91a9e8b68a0cc1577515f8df58ecf455`; PyYAML MIT wheel SHA-256 `34d5fcd24b8445fadc33f9cf348c1047101756fd760b4dacb5c3e99755703310` |
+| Node N-API source dependencies | npm registry assets in `bindings/electron/native/package-lock.json`: `node-addon-api@8.9.0`, `node-api-headers@1.9.0` | MIT; npm SRI is committed in that lockfile |
+| Electron source dependency lock | Electron `43.1.1`; TypeScript `5.9.3` from `bindings/electron/package-lock.json` | Lockfile SRI is the source of integrity; neither is built or shipped in this slice |
+| System libraries | Apple SDK from Xcode `26.2 (17C52)` supplied system zlib and BZip2; no zlib/BZip2 source archive was fetched | Apple SDK/Xcode terms apply |
+
+The exact proof toolchain was Python `3.14.2`, pip `25.3`, Node `v22.23.1`,
+npm `10.9.8`, CMake `4.4.3`, Ninja `1.13.2`, and Xcode `26.2 (17C52)` on
+Darwin ARM64. The source tree's `core/VERSIONS` also pins `PROTOC_VERSION=35.1`
+and `PYTHON_PROTOBUF_VERSION=6.33`; the Phase 0 lock makes the otherwise
+range-based bootstrap deterministic for this proof.
+
+The complete effective CMake cache settings are:
+
+```text
+CMAKE_BUILD_TYPE=Release
+CMAKE_OSX_ARCHITECTURES=arm64
+RAC_BUILD_BACKENDS=ON RAC_BACKEND_LLAMACPP=ON
+RAC_BACKEND_ONNX=OFF RAC_BACKEND_SHERPA=OFF RAC_BACKEND_CLOUD=OFF
+RAC_BACKEND_MLX=OFF RAC_BACKEND_NEURT=OFF RAC_BACKEND_QHEXRT=OFF
+RAC_RUNTIME_COREML=OFF RAC_RUNTIME_ONNXRT=OFF
+RAC_BUILD_ELECTRON_ADDON=ON RAC_ELECTRON_THIN_ADDON=OFF
+RAC_DESKTOP_ADAPTER=OFF RAC_BUILD_SERVER=OFF RAC_BUILD_PLATFORM=OFF
+RAC_BACKEND_RAG=OFF RAC_STATIC_PLUGINS=ON GGML_METAL=OFF
+RAC_GPU_VULKAN=OFF RAC_BUILD_TESTS=OFF RAC_BUILD_SHARED=OFF
+RAC_BUILD_JNI=OFF RAC_BUILD_PLUGIN_SMOKE=OFF
+RAC_BUILD_ELECTRON_HARNESS=OFF RAC_BUILD_PYTHON_MODULE=OFF
+```
 
 These proof flags are not the Phase 1 hardened CMake preset. Phase 1 owns the
 shipping preset, Metal enablement, resource packaging, and sealed-runtime
@@ -84,16 +128,30 @@ settings.
 
 ## Phase 0 public build evidence
 
-A fresh sparse public clone of `origin/ispo/main` at
-`5b98189417b0b0ed6c84b6c5233a50976489918f` configured and built
-`runanywhere_native` on Darwin ARM64 with CMake `4.4.3`, Ninja `1.13.2`, Xcode
-`26.2`, and Node `22.23.1`. The commands used an empty environment containing
-only a scratch `HOME`, `PATH`, and `LANG`; no RunAnywhere token, control-plane
-URL, private engine pack, or vendor-only runner was supplied. The configure
-selected llama.cpp commit `79e2eb5eef131799ca6a2e2e342056a37a148df8` and
-completed with the public-source flags above. The verification output was a
-non-shipped `runanywhere_native.node` Mach-O arm64 file with SHA-256
-`71c9c4e22bca06ff6d5567f11fb18561f4ba9bf9befa37d4f09eebf66afdc938`.
+The current clean-checkout result is recorded after this commit is finalized;
+the immutable commit ID, exact commands, and output SHA-256 replace the
+`PENDING_REPAIR_COMMIT` marker above in the final amendment-free follow-up
+record. The command shape is intentionally explicit:
+
+```sh
+env -i HOME="$scratch/home" PATH="$tool_path" LANG=C.UTF-8 \
+  python3 -m venv "$scratch/phase0-python"
+env -i HOME="$scratch/home" PATH="$tool_path" LANG=C.UTF-8 \
+  "$scratch/phase0-python/bin/python" -m pip install --require-hashes \
+  --only-binary=:all: -r docs/phase0-pyproto-requirements-darwin-arm64-py314.txt
+env -i HOME="$scratch/home" PATH="$tool_path" LANG=C.UTF-8 \
+  RAC_PYTHON="$scratch/phase0-python/bin/python" RAC_PY_NO_INSTALL=1 \
+  cmake -S . -B build/phase0-public-selected -G Ninja [the complete settings above]
+env -i HOME="$scratch/home" PATH="$tool_path" LANG=C.UTF-8 \
+  cmake --build build/phase0-public-selected --target runanywhere_native --parallel 4
+```
+
+`runanywhere_native.node` is non-shipped verification output. Its hash is a
+per-run evidence value, not a Phase 1 artifact hash; binary identity is **not
+expected to reproduce across checkout/build paths** because the inherited
+upstream build embeds path-dependent metadata. The exact fresh-run hash and
+the path-dependence observation are recorded in the final downstream ledger
+entry before it is pushed.
 
 ## Shipped artifacts
 
