@@ -54,7 +54,7 @@ and runtime sealing are explicitly Phase 1 work.
 | `98a0ca76a2c0d5219ce5ca11cf3eea65442d4cc0` | Changes only `bindings/electron/native/package.json` and `package-lock.json`: makes the selected private N-API source package `@ispo/runanywhere-local-inference-native@0.20.31-ispo.0`. | Phase 0 repair-owner review: `git show --stat`, manifest/lock identity check, and clean `npm ci --ignore-scripts`; no associated GitHub pull request exists. | Reviewed direct downstream commit |
 | `5b98189417b0b0ed6c84b6c5233a50976489918f` | Adds this record, the upstream-update policy, and third-party notice; does not change upstream runtime source. | Phase 0 repair-owner review: exact diff audit, license comparison, and public-build record; no associated GitHub pull request exists. | Reviewed direct downstream commit |
 | `37ee854ab6b0c73b9cc6f85ddaf0d5c03a3c663e` | Resolves the Phase 0 llama.cpp tag to its source commit in this record. | Phase 0 repair-owner review: `git ls-remote`/fresh configure resolved the recorded commit; no associated GitHub pull request exists. | Reviewed direct downstream commit |
-| `PENDING_REPAIR_COMMIT` | Synchronizes the native package-lock header and adds the complete reproducibility, license, and repair evidence record. Replace this marker with the immutable commit ID as part of the same reviewed commit. | Phase 0 repair-owner review: clean-checkout verification commands and outputs recorded below. | Pending commit finalization |
+| `d2fdbfb85c41d6e0f5f8f254aee58a91ff0a3075` | Synchronizes the native package-lock header and adds the complete reproducibility, license, and repair-input record, including the checked Python lock. | Phase 0 repair-owner review: clean-checkout verification commands and outputs recorded below. | Reviewed direct downstream commit |
 | Phase 1 runtime patch set | Inference-only CMake preset, source reduction, sealing, packaging. | Not yet produced. | Phase 1 owns it |
 
 No upstream source logic has been modified in Phase 0. This ledger must name
@@ -89,7 +89,7 @@ ARM64 Phase 0 configure; it is not a shipping bill of materials.
 | --- | --- | --- |
 | RunAnywhere source | `https://github.com/RunanywhereAI/runanywhere-sdks.git` commit `00e879fa818111054c02c8ad1f1a0398a4738f92` | Root `LICENSE` SHA-256 `45506e9fbd89370dae9ad4b132cf6d2cc8e26322fa4d9856e26474ff7a3c5acd` |
 | llama.cpp + ggml | `https://github.com/RunanywhereAI/llama.cpp.git`, mutable compatibility tag `runanywhere-b10453.4` resolved to commit `79e2eb5eef131799ca6a2e2e342056a37a148df8` | MIT; preserve its license/notices |
-| Abseil | `https://github.com/abseil/abseil-cpp.git` tag `20250814.1` resolved to commit `255c84dadd029fd8ad25c5efb5933e47beaa00c7` | Apache-2.0 |
+| Abseil | `https://github.com/abseil/abseil-cpp.git` tag `20260107.1` resolved to commit `255c84dadd029fd8ad25c5efb5933e47beaa00c7` | Apache-2.0 |
 | protobuf C++ | `https://github.com/protocolbuffers/protobuf.git` tag `v35.1` resolved to commit `35cd01f9fe9afbeea38cc7b979a3b6bfcde82c03` | BSD-3-Clause |
 | nlohmann/json | `https://github.com/nlohmann/json.git` tag `v3.12.0` resolved to commit `55f93686c01528224f448c19128836e7df245f72` | MIT |
 | libarchive | `https://github.com/libarchive/libarchive.git` tag `v3.8.7` resolved to commit `ded82291ab41d5e355831b96b0e1ff49e24d8939` | BSD-2-Clause |
@@ -128,10 +128,11 @@ settings.
 
 ## Phase 0 public build evidence
 
-The current clean-checkout result is recorded after this commit is finalized;
-the immutable commit ID, exact commands, and output SHA-256 replace the
-`PENDING_REPAIR_COMMIT` marker above in the final amendment-free follow-up
-record. The command shape is intentionally explicit:
+Fresh public checkout evidence for
+`d2fdbfb85c41d6e0f5f8f254aee58a91ff0a3075` is recorded below. This is the
+commit that introduced the package-lock repair and checked Python lock; the
+current evidence-only documentation commit does not alter CMake, source, or
+package-lock inputs. The commands were:
 
 ```sh
 env -i HOME="$scratch/home" PATH="$tool_path" LANG=C.UTF-8 \
@@ -141,7 +142,20 @@ env -i HOME="$scratch/home" PATH="$tool_path" LANG=C.UTF-8 \
   --only-binary=:all: -r docs/phase0-pyproto-requirements-darwin-arm64-py314.txt
 env -i HOME="$scratch/home" PATH="$tool_path" LANG=C.UTF-8 \
   RAC_PYTHON="$scratch/phase0-python/bin/python" RAC_PY_NO_INSTALL=1 \
-  cmake -S . -B build/phase0-public-selected -G Ninja [the complete settings above]
+  cmake -S . -B build/phase0-public-selected -G Ninja \
+  -DCMAKE_BUILD_TYPE=Release -DCMAKE_OSX_ARCHITECTURES=arm64 \
+  -DRAC_BUILD_BACKENDS=ON -DRAC_BACKEND_LLAMACPP=ON \
+  -DRAC_BACKEND_ONNX=OFF -DRAC_BACKEND_SHERPA=OFF \
+  -DRAC_BACKEND_CLOUD=OFF -DRAC_BACKEND_MLX=OFF \
+  -DRAC_BACKEND_NEURT=OFF -DRAC_BACKEND_QHEXRT=OFF \
+  -DRAC_RUNTIME_COREML=OFF -DRAC_RUNTIME_ONNXRT=OFF \
+  -DRAC_BUILD_ELECTRON_ADDON=ON -DRAC_ELECTRON_THIN_ADDON=OFF \
+  -DRAC_DESKTOP_ADAPTER=OFF -DRAC_BUILD_SERVER=OFF \
+  -DRAC_BUILD_PLATFORM=OFF -DRAC_BACKEND_RAG=OFF \
+  -DRAC_STATIC_PLUGINS=ON -DGGML_METAL=OFF -DRAC_GPU_VULKAN=OFF \
+  -DRAC_BUILD_TESTS=OFF -DRAC_BUILD_SHARED=OFF -DRAC_BUILD_JNI=OFF \
+  -DRAC_BUILD_PLUGIN_SMOKE=OFF -DRAC_BUILD_ELECTRON_HARNESS=OFF \
+  -DRAC_BUILD_PYTHON_MODULE=OFF
 env -i HOME="$scratch/home" PATH="$tool_path" LANG=C.UTF-8 \
   cmake --build build/phase0-public-selected --target runanywhere_native --parallel 4
 ```
@@ -150,8 +164,15 @@ env -i HOME="$scratch/home" PATH="$tool_path" LANG=C.UTF-8 \
 per-run evidence value, not a Phase 1 artifact hash; binary identity is **not
 expected to reproduce across checkout/build paths** because the inherited
 upstream build embeds path-dependent metadata. The exact fresh-run hash and
-the path-dependence observation are recorded in the final downstream ledger
-entry before it is pushed.
+the path-dependence observation are: Mach-O arm64 SHA-256
+`c6df8fe2887351598d366a19e75178f756d7c7a4aa062f1cbf57349ad5e36522`, with
+`/private/tmp/runanywhere-phase0-verify.kAHOE0` paths present in the binary.
+The configure took 333.1 seconds and the bounded `--parallel 4` build passed.
+The only reported warnings were upstream third-party compiler/deprecation
+warnings and the final duplicate-library linker warning; there were no build
+errors. `compile_commands.json` contained no NeuRT, QHexRT, QAIRT, ONNX,
+Sherpa, MLX, CoreML, or ONNX-runtime source paths, but did contain the dormant
+download/HF-cache/cloud paths described above.
 
 ## Shipped artifacts
 
