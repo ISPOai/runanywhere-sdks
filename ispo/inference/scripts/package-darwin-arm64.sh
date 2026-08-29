@@ -40,7 +40,8 @@ else
 fi
 
 find "$stage_dir" -type f -exec touch -t 202601010000 {} +
+(cd "$stage_dir" && find . -type f ! -path './metadata/artifact-manifest.sha256' -print | LC_ALL=C sort | while read -r file; do shasum -a 256 "$file"; done) > "$stage_dir/metadata/artifact-manifest.sha256"
+touch -t 202601010000 "$stage_dir/metadata/artifact-manifest.sha256"
 (cd "$stage_dir" && find . -type f -print | LC_ALL=C sort | zip -X -q "$archive" -@)
-(cd "$stage_dir" && find . -type f -print | LC_ALL=C sort | while read -r file; do shasum -a 256 "$file"; done) > "$stage_dir/metadata/artifact-manifest.sha256"
 shasum -a 256 "$archive" > "$archive.sha256"
 printf 'packaged %s\n' "$archive"
