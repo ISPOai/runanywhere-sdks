@@ -71,12 +71,12 @@ nor its author claims that independent review has already happened.
 
 ## Package identity
 
-The current Phase 1.1 package identity is the private Electron/Node N-API
+The current Phase 1.2 package identity is the private Electron/Node N-API
 source package:
 
 | Path | ISPO package name | Version | Publication state |
 | --- | --- | --- | --- |
-| `bindings/electron/native` | `@ispo/runanywhere-local-inference-native` | `0.20.31-ispo.3` | private; never publish from Phase 0/1 |
+| `bindings/electron/native` | `@ispo/runanywhere-local-inference-native` | `0.20.31-ispo.4` | private; never publish from Phase 0/1 |
 
 The future host-private runtime artifact is reserved as
 `@ispo/runanywhere-local-inference` with an ISPO prerelease or release version
@@ -198,7 +198,7 @@ download/HF-cache/cloud paths described above.
 
 ## Shipped artifacts
 
-The Phase 1.1 package layout is `ispo-local-inference-darwin-arm64-0.20.31-ispo.3/`: one native addon in `native/`, embedded Metal shaders inside that Mach-O, no third-party dylibs, notices in `notices/`, and input/SBOM/hash records in `metadata/`. The ZIP preserves that versioned directory as its top-level entry; extraction never spills `native/`, `notices/`, or `metadata/` into a desktop-signing parent. It is an input suitable for later nested desktop signing; this script signs only the native addon and never publishes a package or release.
+The Phase 1.2 package layout is `ispo-local-inference-darwin-arm64-0.20.31-ispo.4/`: one native addon in `native/`, embedded Metal shaders inside that Mach-O, no third-party dylibs, notices in `notices/`, and input/SBOM/hash records in `metadata/`. The ZIP preserves that versioned directory as its top-level entry; extraction never spills `native/`, `notices/`, or `metadata/` into a desktop-signing parent. It is an input suitable for later nested desktop signing; this script signs only the native addon and never publishes a package or release.
 
 `metadata/artifact-manifest.sha256` hashes every staged file except itself. The `.zip.sha256` is adjacent to, not inside, the archive, so the archive hash is non-circular. Secure timestamping makes an official Developer ID archive time-bearing; byte-identical reproducibility is instead proven on the unsigned addon and separately named ad-hoc development archive, while the official archive has deterministic layout and a strict signature gate.
 
@@ -300,7 +300,7 @@ host because its Metal device probe returned null.
 
 ## Phase 1 artifact recipe and gate
 
-The artifact identity is `@ispo/runanywhere-local-inference@0.20.31-ispo.3`. It is a host-internal N-API module, not an Electron preload/renderer/global surface. Its only exports are `initialize`, `capabilities`, `loadExactLocalModel`, `complete`, `stream`, `cancel`, `unload`, `metrics`, `reset`, and `shutdown`.
+The artifact identity is `@ispo/runanywhere-local-inference@0.20.31-ispo.4`. It is a host-internal N-API module, not an Electron preload/renderer/global surface. Its only exports are `initialize`, `capabilities`, `loadExactLocalModel`, `complete`, `stream`, `cancel`, `unload`, `metrics`, `reset`, and `shutdown`.
 
 `stream(prompt, { maxTokens })` creates an opaque native pull-stream identity.
 It has one method, `next()`, whose Promise resolves to exactly one closed result:
@@ -322,11 +322,18 @@ budget. A request that reaches that budget returns `length`, rather than
 attempting another decode and producing a memory-slot failure.
 
 Each Node-API environment owns its own adapter state through instance data; no
-namespace-static inference core survives into shared-library destruction. The
+namespace-static inference core survives into shared-library destruction. Its
+pull demand work is marshalled from libuv's worker callback to one
+environment-owned native executor. That executor is independent of the Node
+event loop and places an explicit Objective-C autorelease scope around each
+demand. This gives Metal temporary objects a deterministic release point and
+prevents lifecycle cycles from accumulating per-worker autoreleased Metal
+state. The
 N-API v8 asynchronous cleanup hook runs its cancel-and-drain sequence on the
 Node cleanup thread: it cancels active generation, waits for every
 queued/running stream lease to finish, unloads the model, shuts down and
-destroys `InferenceCore`, and only then releases the hook. It never calls
+destroys `InferenceCore`, joins the native executor, and only then releases the
+hook. It never calls
 Node-API cleanup-handle removal from a detached native thread. The environment
 finalizer repeats the same idempotent shutdown path after the hook, including
 when initialization had failed after a partially constructed core. Explicit
@@ -345,7 +352,7 @@ From a clean public checkout, run the following in two independent scratch roots
 
 ```sh
 public_remote="https://github.com/ISPOai/runanywhere-sdks.git"
-head_ref="ispo/phase1-1-pull-stream"
+head_ref="ispo/phase1-2-metal-rss"
 for root in /private/tmp/ispo-phase1-a /private/tmp/ispo-phase1-b; do
   git clone --branch "$head_ref" --single-branch "$public_remote" "$root"
   (cd "$root/bindings/electron/native" &&
@@ -386,16 +393,16 @@ output.
 For a separately named ad-hoc development artifact only:
 
 ```sh
-ISPO_ARTIFACT_OUTPUT=/private/tmp/ispo-phase1-1-development \
+ISPO_ARTIFACT_OUTPUT=/private/tmp/ispo-phase1-2-development \
   ./ispo/inference/scripts/package-development-darwin-arm64.sh
-unzip -Z1 /private/tmp/ispo-phase1-1-development/ispo-local-inference-darwin-arm64-0.20.31-ispo.3-development.zip | \
-  grep -E '^ispo-local-inference-darwin-arm64-0.20.31-ispo.3-development/(metadata|native|notices)/'
+unzip -Z1 /private/tmp/ispo-phase1-2-development/ispo-local-inference-darwin-arm64-0.20.31-ispo.4-development.zip | \
+  grep -E '^ispo-local-inference-darwin-arm64-0.20.31-ispo.4-development/(metadata|native|notices)/'
 ```
 
 For an official release candidate, an explicitly supplied Developer ID identity is mandatory. The release script fails before build/output creation when absent, signs with `--timestamp --options runtime`, requires a TeamIdentifier, hardened-runtime flag, strict verification, and a secure timestamp, and has no ad-hoc fallback:
 
 ```sh
-ISPO_ARTIFACT_OUTPUT=/private/tmp/ispo-phase1-1-release \
+ISPO_ARTIFACT_OUTPUT=/private/tmp/ispo-phase1-2-release \
 ISPO_CODESIGN_IDENTITY='Developer ID Application: ISPO Labs, Inc (4L8CX8AY6M)' \
   ./ispo/inference/scripts/package-darwin-arm64.sh
 ```

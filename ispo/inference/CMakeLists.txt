@@ -83,7 +83,9 @@ target_compile_options(ispo_inference_core PRIVATE
     "-ffile-prefix-map=${CMAKE_SOURCE_DIR}=."
     "-ffile-prefix-map=${CMAKE_BINARY_DIR}=build")
 
-add_library(ispo_local_inference_native MODULE native/addon.cpp)
+add_library(ispo_local_inference_native MODULE
+    native/addon.cpp
+    native/metal-executor-scope.mm)
 set_target_properties(ispo_local_inference_native PROPERTIES
     PREFIX ""
     SUFFIX ".node"

@@ -3,7 +3,7 @@ set -euo pipefail
 
 readonly repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)"
 readonly preset="ispo-darwin-arm64-inference-release"
-readonly version="0.20.31-ispo.3"
+readonly version="0.20.31-ispo.4"
 readonly output_dir="${ISPO_ARTIFACT_OUTPUT:-$repo_root/dist/ispo-local-inference}"
 readonly stage_dir="$output_dir/ispo-local-inference-darwin-arm64-$version"
 readonly archive="$output_dir/ispo-local-inference-darwin-arm64-$version.zip"
@@ -166,6 +166,8 @@ const sourceInputs = [
   'ispo/inference/core/inference_core.h',
   'ispo/inference/core/inference_core.cpp',
   'ispo/inference/native/addon.cpp',
+  'ispo/inference/native/metal-executor-scope.h',
+  'ispo/inference/native/metal-executor-scope.mm',
   'ispo/inference/native/exported-symbols.txt',
   'ispo/inference/patches/llama-static-backend-registry.patch',
   'ispo/inference/scripts/audit-artifact.sh',
