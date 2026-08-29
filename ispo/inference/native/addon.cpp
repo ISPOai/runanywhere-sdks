@@ -58,7 +58,7 @@ class EnvironmentState final {
 
     void initialize(bool force_cpu) {
         try {
-            core().initialize(force_cpu);
+            ispo::inference::initialize_in_metal_autorelease_scope(core(), force_cpu);
         } catch (...) {
             shutdown_core(false);
             throw;
@@ -136,7 +136,7 @@ class EnvironmentState final {
             active_core = core_;
         }
         if (active_core != nullptr) {
-            active_core->cancel();
+            ispo::inference::cancel_in_metal_autorelease_scope(*active_core);
         }
     }
 
@@ -147,15 +147,23 @@ class EnvironmentState final {
             active_core = core_;
         }
         if (active_core != nullptr) {
-            active_core->abandon_stream(stream);
+            ispo::inference::abandon_stream_in_metal_autorelease_scope(*active_core, stream);
         } else {
             stream->request_cancel();
         }
     }
 
-    void unload() noexcept { with_existing_core([](InferenceCore& core) { core.unload(); }); }
+    void unload() noexcept {
+        with_existing_core([](InferenceCore& core) {
+            ispo::inference::unload_in_metal_autorelease_scope(core);
+        });
+    }
 
-    void reset() noexcept { with_existing_core([](InferenceCore& core) { core.reset(); }); }
+    void reset() noexcept {
+        with_existing_core([](InferenceCore& core) {
+            ispo::inference::reset_in_metal_autorelease_scope(core);
+        });
+    }
 
     [[nodiscard]] Metrics metrics() const {
         std::lock_guard lock(mutex_);
@@ -212,7 +220,7 @@ class EnvironmentState final {
         }
 
         if (active_core != nullptr) {
-            active_core->cancel();
+            ispo::inference::cancel_in_metal_autorelease_scope(*active_core);
         }
 
         std::shared_ptr<InferenceCore> retiring_core;
@@ -229,11 +237,11 @@ class EnvironmentState final {
             // Metal/Objective-C cache while model resources are released.
             stop_generation_executor();
             try {
-                retiring_core->unload();
+                ispo::inference::unload_in_metal_autorelease_scope(*retiring_core);
             } catch (...) {
             }
             try {
-                retiring_core->shutdown();
+                ispo::inference::shutdown_in_metal_autorelease_scope(*retiring_core);
             } catch (...) {
             }
         }
@@ -579,8 +587,8 @@ Napi::Value LoadExactLocalModel(const Napi::CallbackInfo& info) {
         load_options.force_cpu = boolean_option(config, "forceCpu", false);
         load_options.inject_metal_failure_for_test =
             boolean_option(config, "injectMetalFailureForTest", false);
-        environment_state(info.Env()).core().load_exact_local_model(
-            info[0].As<Napi::String>().Utf8Value(), load_options);
+        ispo::inference::load_in_metal_autorelease_scope(
+            environment_state(info.Env()).core(), info[0].As<Napi::String>().Utf8Value(), load_options);
         return Capabilities(info).As<Napi::Object>();
     });
 }
@@ -590,8 +598,9 @@ Napi::Value Complete(const Napi::CallbackInfo& info) {
         require_string(info, 0, "complete(prompt, options?)");
         const uint32_t max_tokens = uint_option(options(info, 1), "maxTokens", 32);
         return Napi::String::New(
-            info.Env(), environment_state(info.Env()).core().complete(
-                            info[0].As<Napi::String>().Utf8Value(), max_tokens));
+            info.Env(), ispo::inference::complete_in_metal_autorelease_scope(
+                            environment_state(info.Env()).core(), info[0].As<Napi::String>().Utf8Value(),
+                            max_tokens));
     });
 }
 
