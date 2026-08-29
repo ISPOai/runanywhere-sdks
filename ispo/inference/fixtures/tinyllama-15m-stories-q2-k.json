@@ -1,0 +1,13 @@
+{
+  "name": "tinyllama-15M-stories-Q2_K.gguf",
+  "purpose": "test-only deterministic GGUF smoke fixture; never fetched by runtime code",
+  "source": "https://huggingface.co/tensorblock/tinyllama-15M-stories-GGUF/resolve/227c5a5ad3c1a830901543cf9959c53572014a68/tinyllama-15M-stories-Q2_K.gguf",
+  "sourceRevision": "227c5a5ad3c1a830901543cf9959c53572014a68",
+  "sha256": "f7e39dc9f26f3d39bf59e885349c6eec65880f685322d591f53e6cdb46ceb2e9",
+  "bytes": 13717344,
+  "license": "MIT",
+  "licenseSource": "Pinned README.md model-card front matter declares license: mit at sourceRevision",
+  "licenseRecord": "https://huggingface.co/tensorblock/tinyllama-15M-stories-GGUF/raw/227c5a5ad3c1a830901543cf9959c53572014a68/README.md",
+  "licenseRecordSha256": "904844774ca757e910ac26d8bbf550e574946ee4a72ba99b17f986a4ea75e315",
+  "redistribution": "test-only verification input; not shipped in the runtime artifact; its MIT license record is shipped separately from runtime notices"
+}

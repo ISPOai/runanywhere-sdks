@@ -30,6 +30,49 @@
                 "RAC_BUILD_TESTS": "OFF"
             }
         },
+        {
+            "name": "ispo-darwin-arm64-inference-release",
+            "displayName": "ISPO inference-only Darwin arm64 artifact",
+            "inherits": "base-release",
+            "cacheVariables": {
+                "CMAKE_OSX_ARCHITECTURES": "arm64",
+                "CMAKE_OSX_DEPLOYMENT_TARGET": "14.5",
+                "RAC_ISPO_INFERENCE_ONLY": "ON",
+                "RAC_DESKTOP_ADAPTER": "OFF",
+                "RAC_BUILD_BACKENDS": "OFF",
+                "RAC_BACKEND_LLAMACPP": "OFF",
+                "RAC_BACKEND_ONNX": "OFF",
+                "RAC_BACKEND_SHERPA": "OFF",
+                "RAC_BACKEND_CLOUD": "OFF",
+                "RAC_BACKEND_MLX": "OFF",
+                "RAC_BACKEND_NEURT": "OFF",
+                "RAC_BACKEND_QHEXRT": "OFF",
+                "RAC_RUNTIME_COREML": "OFF",
+                "RAC_RUNTIME_ONNXRT": "OFF",
+                "RAC_BUILD_SERVER": "OFF",
+                "RAC_BUILD_PLATFORM": "OFF",
+                "RAC_BUILD_TESTS": "OFF",
+                "RAC_BUILD_JNI": "OFF",
+                "RAC_BUILD_ELECTRON_ADDON": "OFF",
+                "RAC_BUILD_ELECTRON_HARNESS": "OFF",
+                "RAC_BUILD_PYTHON_MODULE": "OFF",
+                "RAC_STATIC_PLUGINS": "ON",
+                "RAC_GPU_VULKAN": "OFF",
+                "GGML_METAL": "ON",
+                "GGML_METAL_EMBED_LIBRARY": "ON",
+                "GGML_ACCELERATE": "ON",
+                "GGML_BACKEND_DL": "OFF",
+                "GGML_CPU_ALL_VARIANTS": "OFF",
+                "GGML_NATIVE": "OFF",
+                "GGML_RPC": "OFF",
+                "LLAMA_BUILD_SERVER": "OFF",
+                "LLAMA_BUILD_EXAMPLES": "OFF",
+                "LLAMA_BUILD_TESTS": "OFF",
+                "LLAMA_CURL": "OFF",
+                "LLAMA_HTTPLIB": "OFF"
+            },
+            "condition": { "type": "equals", "lhs": "${hostSystemName}", "rhs": "Darwin" }
+        },
 
         {
             "name": "macos-debug",
@@ -424,6 +467,7 @@
     ],
 
     "buildPresets": [
+        { "name": "ispo-darwin-arm64-inference-release", "configurePreset": "ispo-darwin-arm64-inference-release", "targets": ["ispo_local_inference_native"] },
         { "name": "macos-debug",      "configurePreset": "macos-debug" },
         { "name": "macos-release",    "configurePreset": "macos-release" },
         { "name": "linux-debug",      "configurePreset": "linux-debug" },
