@@ -13,6 +13,10 @@ if [[ "$(uname -s)" != "Darwin" || "$(uname -m)" != "arm64" ]]; then
     echo "Darwin arm64 host required" >&2
     exit 64
 fi
+if [[ "${ISPO_RELEASE_SIGNING:-0}" == "1" && -z "${ISPO_CODESIGN_IDENTITY:-}" ]]; then
+    echo "ISPO_CODESIGN_IDENTITY is required for release packaging" >&2
+    exit 65
+fi
 
 cmake --preset "$preset"
 cmake --build --preset "$preset" --parallel "${ISPO_BUILD_JOBS:-4}"
@@ -31,7 +35,6 @@ cat > "$stage_dir/metadata/sbom.json" <<EOF
 EOF
 
 if [[ "${ISPO_RELEASE_SIGNING:-0}" == "1" ]]; then
-    : "${ISPO_CODESIGN_IDENTITY:?ISPO_CODESIGN_IDENTITY is required for release packaging}"
     codesign --force --sign "$ISPO_CODESIGN_IDENTITY" --timestamp --options runtime "$stage_dir/native/ispo_local_inference_native.node"
     codesign --verify --strict --verbose=2 "$stage_dir/native/ispo_local_inference_native.node"
 else
