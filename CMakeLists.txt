@@ -86,6 +86,9 @@ option(RAC_GPU_CUDA           "Build llama.cpp with the CUDA GPU backend (NVIDIA
 # not a guarantee: engines/llamacpp probes for the Vulkan SDK and silently falls
 # back to CPU when it is absent, so a host without the SDK still configures.
 option(RAC_GPU_VULKAN         "Build llama.cpp with the Vulkan GPU backend on Windows/Linux (AMD/Intel/NVIDIA)" ON)
+option(RAC_ISPO_INFERENCE_ONLY
+       "Build only the ISPO Darwin local-inference artifact; excludes inherited commons surfaces"
+       OFF)
 
 # Protobuf is a private implementation detail of the serialized-byte C ABI.
 # Keep its C++ namespace private too: static ML runtimes such as ONNX Runtime
@@ -226,6 +229,17 @@ endif()
 # =============================================================================
 # Subdirectories
 # =============================================================================
+
+# The ISPO artifact deliberately does not configure the inherited commons tree.
+# That tree owns the legacy download, credentials, Connect, and control-plane
+# surfaces that are not part of this sealed local-inference distribution.
+if(RAC_ISPO_INFERENCE_ONLY)
+    if(NOT APPLE OR NOT CMAKE_OSX_ARCHITECTURES STREQUAL "arm64")
+        message(FATAL_ERROR "RAC_ISPO_INFERENCE_ONLY is supported only for Darwin arm64")
+    endif()
+    add_subdirectory(ispo/inference)
+    return()
+endif()
 
 # Commons — always built. Owns its own backend-toggle option block.
 add_subdirectory(core)

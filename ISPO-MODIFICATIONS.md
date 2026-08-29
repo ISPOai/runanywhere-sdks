@@ -58,6 +58,7 @@ and runtime sealing are explicitly Phase 1 work.
 | `3205279cb974c33dc66cb226f8387ce3f34823a4` | Corrects the resolved Abseil tag and records the first clean public build evidence. | Closure PR review scope: dependency revision and fresh public configure/build evidence; independent review is required before merge. | Awaiting independent PR review |
 | `106d680a217895d4a3d83b21ffe0735dda69bbb0` | Records the final Phase 0 clean-build result without changing runtime source, CMake inputs, or package-lock contents. | Closure PR review scope: build transcript, output hash, source-graph, and no-credential evidence; independent review is required before merge. | Awaiting independent PR review |
 | Phase 1 runtime patch set | Inference-only CMake preset, source reduction, sealing, packaging. | Not yet produced. | Phase 1 owns it |
+| Phase 1 `ispo/inference` artifact | Adds the `ispo-darwin-arm64-inference-release` preset and an isolated direct core + llama.cpp + N-API adapter. The inherited commons, engine registry, Electron facade, desktop adapter, server, downloads, telemetry, Connect, and private engines are not configured on this path. | `ispo/inference/scripts/run-smoke.js`; package manifest and binary graph scan. Independent review required. | Awaiting independent PR review |
 
 No upstream source logic has been modified in Phase 0. The additive
 [closure PR #1](https://github.com/ISPOai/runanywhere-sdks/pull/1) contains
@@ -204,3 +205,39 @@ download/HF-cache/cloud paths described above.
 
 Before any artifact is released, replace each pending entry with the exact
 input pin, output filename, SHA-256, build command, and verification result.
+
+## Phase 1 artifact recipe
+
+The artifact identity is `@ispo/runanywhere-local-inference@0.20.31-ispo.1`.
+It is a host-internal N-API module, not an Electron preload/renderer/global
+surface. Its only exports are `initialize`, `capabilities`,
+`loadExactLocalModel`, `complete`, `stream`, `cancel`, `unload`, `metrics`,
+`reset`, and `shutdown`.
+
+The selected source slice fetches only the pinned public llama.cpp commit
+`79e2eb5eef131799ca6a2e2e342056a37a148df8`, enables embedded Metal shaders
+and Accelerate, and uses CPU/Accelerate if Metal has no usable device or context
+initialization fails. It sets `RAC_DESKTOP_ADAPTER=OFF`; no inherited core
+target is configured. llama.cpp HTTP, RPC, curl, server, examples, and tests
+are disabled.
+
+```sh
+cd bindings/electron/native
+npm ci --ignore-scripts --cache /private/tmp/ispo-phase1-npm-cache
+cd ../..
+cmake --preset ispo-darwin-arm64-inference-release
+cmake --build --preset ispo-darwin-arm64-inference-release --parallel 4
+./ispo/inference/scripts/fetch-smoke-fixture.sh /private/tmp/ispo-fixtures/stories15M-q4_0.gguf
+node ispo/inference/scripts/run-smoke.js \
+  "$PWD/build/ispo-darwin-arm64-inference-release/ispo/inference/ispo_local_inference_native.node" \
+  /private/tmp/ispo-fixtures/stories15M-q4_0.gguf
+ISPO_RELEASE_SIGNING=1 ISPO_CODESIGN_IDENTITY='Developer ID Application: ISPO Labs, Inc (4L8CX8AY6M)' \
+  ./ispo/inference/scripts/package-darwin-arm64.sh
+```
+
+The test-only `stories15M-q4_0.gguf` fixture is pinned in
+`ispo/inference/fixtures/stories15m-q4_0.json` to source revision
+`499bc8821c6b12b4e53c5bffcb21ec206f212d81` and SHA-256
+`66967fbece6dbe97886593fdbb73589584927e29119ec31f08090732d1861739`.
+The runtime has no fixture download code. Model license admission remains a
+separate host decision.

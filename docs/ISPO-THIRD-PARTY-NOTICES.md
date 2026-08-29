@@ -15,6 +15,14 @@ inference slice. It supplements, and never replaces, the complete upstream
 | Python/protoc codegen tools | CPython `3.14.2`; `protobuf==6.33.0` (BSD-3-Clause) and `PyYAML==6.0.3` (MIT) from the checked hash lock; protoc `35.1` (BSD-3-Clause) | Preserve applicable notices if shipped. Phase 0 consumes them only to configure/build source; the lock and protoc SHA-256 are recorded in `ISPO-MODIFICATIONS.md`. |
 | Admitted models | Separate host-owned admission record per model | Model weights, tokenizers, templates, datasets, and upstream notices are separately licensed. Runtime licensing never admits a model. Require a model-specific license ID/link, source revision, file checksum, acceptance state, and redistribution decision before download or shipment. |
 
+## Phase 1 test fixture
+
+`stories15M-q4_0.gguf` is a test-only Apache-2.0 GGUF fixture from
+`ggml-org/models-moved`, immutable source revision
+`499bc8821c6b12b4e53c5bffcb21ec206f212d81`, SHA-256
+`66967fbece6dbe97886593fdbb73589584927e29119ec31f08090732d1861739`.
+It is fetched only by the explicit verification helper, never by the runtime.
+
 The Phase 0 source proof does not distribute a compiled artifact. Before Phase
 1 shipping, produce a complete, artifact-specific third-party notice bundle and
 associate it with the artifact manifest and SHA-256 hashes in
