@@ -8,9 +8,11 @@
 #include <mutex>
 #include <stdexcept>
 #include <string>
+#include <thread>
 #include <utility>
 
 #include "inference_core.h"
+#include "metal-executor-scope.h"
 
 namespace {
 
@@ -39,6 +41,7 @@ class EnvironmentState final {
     enum class NextLease { kQueued, kDuplicate, kTerminal };
 
     EnvironmentState() = default;
+    ~EnvironmentState() { stop_generation_executor(); }
     EnvironmentState(const EnvironmentState&) = delete;
     EnvironmentState& operator=(const EnvironmentState&) = delete;
 
@@ -92,9 +95,27 @@ class EnvironmentState final {
             active_core = core_;
         }
         if (active_core == nullptr) {
+            stream->request_cancel();
             return stream->terminal_step();
         }
-        return active_core->next(stream);
+
+        try {
+            auto request = std::make_shared<GenerationRequest>(
+                GenerationRequest{.core = std::move(active_core), .stream = stream});
+            std::unique_lock lock(generation_executor_mutex_);
+            if (generation_executor_stopping_) {
+                stream->request_cancel();
+                return stream->terminal_step();
+            }
+            ensure_generation_executor_locked();
+            generation_request_ = request;
+            generation_executor_ready_.notify_one();
+            generation_executor_done_.wait(lock, [&request] { return request->complete; });
+            return request->result;
+        } catch (...) {
+            stream->request_cancel();
+            return stream->terminal_step();
+        }
     }
 
     void finish_next() noexcept {
@@ -202,6 +223,11 @@ class EnvironmentState final {
         }
 
         if (retiring_core) {
+            // All queued demand work has settled before this point. Joining the
+            // executor first makes the Metal worker affinity explicit and
+            // prevents a fresh libuv worker from retaining another per-thread
+            // Metal/Objective-C cache while model resources are released.
+            stop_generation_executor();
             try {
                 retiring_core->unload();
             } catch (...) {
@@ -219,6 +245,71 @@ class EnvironmentState final {
         shutdown_complete_.notify_all();
     }
 
+    struct GenerationRequest final {
+        std::shared_ptr<InferenceCore> core;
+        std::shared_ptr<StreamSession> stream;
+        StreamStep result;
+        bool complete = false;
+    };
+
+    void ensure_generation_executor_locked() {
+        if (generation_executor_.joinable()) {
+            return;
+        }
+        generation_executor_stopping_ = false;
+        generation_executor_ = std::thread([this] { run_generation_executor(); });
+    }
+
+    void run_generation_executor() noexcept {
+        while (true) {
+            std::shared_ptr<GenerationRequest> request;
+            {
+                std::unique_lock lock(generation_executor_mutex_);
+                generation_executor_ready_.wait(lock, [this] {
+                    return generation_executor_stopping_ || generation_request_ != nullptr;
+                });
+                if (generation_executor_stopping_) {
+                    return;
+                }
+                request = std::move(generation_request_);
+            }
+
+            StreamStep result;
+            try {
+                result = ispo::inference::execute_next_in_metal_autorelease_scope(
+                    *request->core, request->stream);
+            } catch (...) {
+                request->stream->request_cancel();
+                result = request->stream->terminal_step();
+            }
+
+            {
+                std::lock_guard lock(generation_executor_mutex_);
+                request->result = std::move(result);
+                request->complete = true;
+            }
+            generation_executor_done_.notify_all();
+        }
+    }
+
+    void stop_generation_executor() noexcept {
+        std::thread executor;
+        {
+            std::lock_guard lock(generation_executor_mutex_);
+            if (!generation_executor_.joinable()) {
+                return;
+            }
+            generation_executor_stopping_ = true;
+            generation_executor_ready_.notify_one();
+            executor = std::move(generation_executor_);
+        }
+        executor.join();
+        {
+            std::lock_guard lock(generation_executor_mutex_);
+            generation_executor_stopping_ = false;
+        }
+    }
+
     mutable std::mutex mutex_;
     std::condition_variable nexts_drained_;
     std::condition_variable shutdown_complete_;
@@ -226,6 +317,12 @@ class EnvironmentState final {
     uint32_t pending_nexts_ = 0;
     bool environment_teardown_ = false;
     bool shutdown_in_progress_ = false;
+    std::mutex generation_executor_mutex_;
+    std::condition_variable generation_executor_ready_;
+    std::condition_variable generation_executor_done_;
+    std::shared_ptr<GenerationRequest> generation_request_;
+    std::thread generation_executor_;
+    bool generation_executor_stopping_ = false;
 };
 
 void environment_cleanup(napi_async_cleanup_hook_handle hook, void* data) {
