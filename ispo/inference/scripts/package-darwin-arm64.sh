@@ -3,7 +3,7 @@ set -euo pipefail
 
 readonly repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)"
 readonly preset="ispo-darwin-arm64-inference-release"
-readonly version="0.20.31-ispo.4"
+readonly version="0.20.31-ispo.6"
 readonly output_dir="${ISPO_ARTIFACT_OUTPUT:-$repo_root/dist/ispo-local-inference}"
 readonly stage_dir="$output_dir/ispo-local-inference-darwin-arm64-$version"
 readonly archive="$output_dir/ispo-local-inference-darwin-arm64-$version.zip"
@@ -36,6 +36,8 @@ readonly package_stage_dir="$stage_dir$artifact_suffix"
 readonly package_archive="${archive%.zip}$artifact_suffix.zip"
 readonly build_dir="$(mktemp -d "${TMPDIR:-/private/tmp}/ispo-inference-build.XXXXXX")"
 readonly addon="$build_dir/ispo/inference/ispo_local_inference_native.node"
+readonly canonical_pre_explicit_sign_stage="raw-linker-output-before-explicit-codesign"
+readonly canonical_pre_explicit_sign_identity="$build_dir/canonical-pre-explicit-sign-identity.json"
 
 cleanup() {
     rm -rf "$build_dir"
@@ -56,6 +58,33 @@ if [[ ! -f "$llama_source/LICENSE" || ! -f "$addon" ]]; then
     echo "the pinned source or native addon did not populate" >&2
     exit 65
 fi
+
+"$repo_root/ispo/inference/scripts/audit-artifact.sh" "$addon"
+codesign --verify --strict --verbose=4 "$addon"
+readonly raw_linker_signature_details="$(codesign -dvv "$addon" 2>&1)"
+if ! grep -E '^CodeDirectory .*flags=.*adhoc,linker-signed' <<<"$raw_linker_signature_details" >/dev/null ||
+   ! grep -Fx 'Signature=adhoc' <<<"$raw_linker_signature_details" >/dev/null ||
+   ! grep -Fx 'TeamIdentifier=not set' <<<"$raw_linker_signature_details" >/dev/null; then
+    echo "raw linker output did not retain the required automatic ad-hoc signature" >&2
+    exit 65
+fi
+readonly canonical_pre_explicit_sign_sha256="$(shasum -a 256 "$addon" | awk '{print $1}')"
+if ! [[ "$canonical_pre_explicit_sign_sha256" =~ ^[0-9a-f]{64}$ ]]; then
+    echo "raw linker output did not produce a SHA-256 identity" >&2
+    exit 65
+fi
+node - "$canonical_pre_explicit_sign_sha256" "$canonical_pre_explicit_sign_stage" <<'NODE' > "$canonical_pre_explicit_sign_identity"
+'use strict';
+
+const [sha256, stage] = process.argv.slice(2);
+process.stdout.write(`${JSON.stringify({
+  schemaVersion: 1,
+  artifactPath: 'native/ispo_local_inference_native.node',
+  stage,
+  signatureState: 'linker-generated-ad-hoc',
+  sha256,
+}, null, 2)}\n`);
+NODE
 
 if [[ "$mode" == "release" ]]; then
     codesign --force --sign "$ISPO_CODESIGN_IDENTITY" --timestamp --options runtime "$addon"
@@ -96,7 +125,7 @@ cp "$repo_root/ISPO-MODIFICATIONS.md" "$package_stage_dir/metadata/ISPO-MODIFICA
 cp "$repo_root/ispo/inference/fixtures/tinyllama-15m-stories-q2-k.json" \
     "$package_stage_dir/metadata/smoke-fixture.json"
 
-node - "$package_stage_dir/metadata" "$repo_root" "$llama_source" "$version" <<'NODE'
+node - "$package_stage_dir/metadata" "$repo_root" "$llama_source" "$version" "$canonical_pre_explicit_sign_identity" <<'NODE'
 'use strict';
 
 const crypto = require('node:crypto');
@@ -104,9 +133,19 @@ const fs = require('node:fs');
 const path = require('node:path');
 const { execFileSync } = require('node:child_process');
 
-const [metadataDirectory, repositoryRoot, llamaSource, artifactVersion] = process.argv.slice(2);
+const [metadataDirectory, repositoryRoot, llamaSource, artifactVersion, canonicalIdentityPath] = process.argv.slice(2);
 const sha256 = (filename) => crypto.createHash('sha256').update(fs.readFileSync(filename)).digest('hex');
 const output = (command, commandArguments) => execFileSync(command, commandArguments, { encoding: 'utf8' }).trim();
+const canonicalPreExplicitSignIdentity = JSON.parse(fs.readFileSync(canonicalIdentityPath, 'utf8'));
+if (
+  canonicalPreExplicitSignIdentity.schemaVersion !== 1 ||
+  canonicalPreExplicitSignIdentity.artifactPath !== 'native/ispo_local_inference_native.node' ||
+  canonicalPreExplicitSignIdentity.stage !== 'raw-linker-output-before-explicit-codesign' ||
+  canonicalPreExplicitSignIdentity.signatureState !== 'linker-generated-ad-hoc' ||
+  !/^[0-9a-f]{64}$/.test(canonicalPreExplicitSignIdentity.sha256)
+) {
+  throw new Error('canonical pre-explicit-sign identity is malformed');
+}
 const sourceFile = (relativePath) => {
   const filename = path.join(repositoryRoot, relativePath);
   return { path: relativePath, sha256: sha256(filename) };
@@ -173,6 +212,7 @@ const sourceInputs = [
   'ispo/inference/scripts/audit-artifact.sh',
   'ispo/inference/scripts/fetch-cyclonedx-1.5-schema.sh',
   'ispo/inference/scripts/fetch-smoke-fixture.sh',
+  'ispo/inference/scripts/package-development-darwin-arm64.sh',
   'ispo/inference/scripts/package-darwin-arm64.sh',
   'ispo/inference/scripts/run-fresh-smoke-series.sh',
   'ispo/inference/scripts/run-smoke.js',
@@ -206,7 +246,9 @@ const inputManifest = {
   version: artifactVersion,
   forkHead: output('git', ['-C', repositoryRoot, 'rev-parse', 'HEAD']),
   phase11Base: '70877eb0a3281ae5f5ddad0fa48d60e749746083',
+  reviewedBase: '04273588a9c03088bf0e5438b0a0cc7f9d9aa6df',
   adoptedUpstream: '00e879fa818111054c02c8ad1f1a0398a4738f92',
+  canonicalPreExplicitSignIdentity,
   llamaCpp: {
     repository: 'https://github.com/RunanywhereAI/llama.cpp.git',
     revision: '79e2eb5eef131799ca6a2e2e342056a37a148df8',
@@ -269,7 +311,12 @@ const sbom = {
       name: '@ispo/runanywhere-local-inference',
       version: artifactVersion,
       supplier: { name: 'ISPOai' },
-      properties: [{ name: 'org.ispo.artifact.architecture', value: 'darwin-arm64' }],
+      properties: [
+        { name: 'org.ispo.artifact.architecture', value: 'darwin-arm64' },
+        { name: 'org.ispo.artifact.pre-explicit-sign.stage', value: canonicalPreExplicitSignIdentity.stage },
+        { name: 'org.ispo.artifact.pre-explicit-sign.sha256', value: canonicalPreExplicitSignIdentity.sha256 },
+        { name: 'org.ispo.artifact.pre-explicit-sign.signature-state', value: canonicalPreExplicitSignIdentity.signatureState },
+      ],
     },
   },
   components: [
@@ -332,6 +379,7 @@ const sbom = {
 };
 fs.writeFileSync(path.join(metadataDirectory, 'input-manifest.json'), `${JSON.stringify(inputManifest, null, 2)}\n`);
 fs.writeFileSync(path.join(metadataDirectory, 'sbom.json'), `${JSON.stringify(sbom, null, 2)}\n`);
+fs.copyFileSync(canonicalIdentityPath, path.join(metadataDirectory, 'canonical-pre-explicit-sign-identity.json'));
 NODE
 
 readonly schema_path="$build_dir/bom-1.5.schema.json"
