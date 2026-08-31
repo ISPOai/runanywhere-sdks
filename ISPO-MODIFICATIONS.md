@@ -78,7 +78,7 @@ source package:
 
 | Path | ISPO package name | Version | Publication state |
 | --- | --- | --- | --- |
-| `bindings/electron/native` | `@ispo/runanywhere-local-inference-native` | `0.20.31-ispo.6` | private; unadmitted proposal; never publish from Phase 0/1 |
+| `bindings/electron/native` | `@ispo/runanywhere-local-inference-native` | `0.20.31-ispo.7` | private; unadmitted proposal; never publish from Phase 0/1 |
 
 The future host-private runtime artifact is reserved as
 `@ispo/runanywhere-local-inference` with an ISPO prerelease or release version
@@ -511,3 +511,30 @@ inputs. It must not use `ISPO_SMOKE_ALLOW_CPU_ONLY`, a CPU-only override, or a
 retry wrapper. The pinned TinyLlama fixture remains a test-only input outside
 the repository/package and is usable only after its helper verifies the pinned
 MIT model-card and model-file hashes.
+
+## 0.20.31-ispo.7 executor-quiescence repair proposal
+
+This additive, unadmitted `.7` proposal descends from the `.6` pre-explicit-
+sign proposal without rewriting it. It repairs the executor handoff that let a
+pull result become observable after the request result was written but before
+the dedicated executor had returned to its condition-variable wait boundary.
+Each request now carries an executor-quiescent acknowledgement; the waiting
+`next()` work does not complete until both the result and that acknowledgement
+are present. The acknowledgement is set while the executor retains its mutex
+and immediately re-enters the wait loop, so a caller cannot baseline RSS in
+the post-demand settlement window.
+
+`ISPO_INFERENCE_TESTING` is an explicit test-build-only CMake option. It adds a
+model-free native barrier probe that pauses the executor after result
+publication. The focused test proves that the pending operation remains
+unsettled until the barrier is released and the quiescence acknowledgement is
+published. The release preset leaves the option unset; package assembly checks
+the unchanged closed production export set and records the test source as an
+input with test-only hooks disabled.
+
+No `.7` archive, tag, policy update, catalog admission, publication, merge, or
+independent review is claimed by this source change. Its single canonical raw
+pre-explicit-sign identity may be recorded only after two fresh isolated public
+roots reproduce the linker-generated ad-hoc output byte-for-byte. The required
+unsandboxed five-by-six Metal smoke remains a one-time post-repair gate, not a
+retry of `.6`.

@@ -3,7 +3,7 @@ set -euo pipefail
 
 readonly repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)"
 readonly preset="ispo-darwin-arm64-inference-release"
-readonly version="0.20.31-ispo.6"
+readonly version="0.20.31-ispo.7"
 readonly output_dir="${ISPO_ARTIFACT_OUTPUT:-$repo_root/dist/ispo-local-inference}"
 readonly stage_dir="$output_dir/ispo-local-inference-darwin-arm64-$version"
 readonly archive="$output_dir/ispo-local-inference-darwin-arm64-$version.zip"
@@ -61,6 +61,27 @@ fi
 
 "$repo_root/ispo/inference/scripts/audit-artifact.sh" "$addon"
 codesign --verify --strict --verbose=4 "$addon"
+node - "$addon" <<'NODE'
+'use strict';
+
+const addon = require(process.argv[2]);
+const expectedExports = [
+  'capabilities',
+  'cancel',
+  'complete',
+  'initialize',
+  'loadExactLocalModel',
+  'metrics',
+  'reset',
+  'shutdown',
+  'stream',
+  'unload',
+];
+const actualExports = Object.keys(addon).sort();
+if (JSON.stringify(actualExports) !== JSON.stringify(expectedExports)) {
+  throw new Error(`production addon exports changed: ${actualExports.join(', ')}`);
+}
+NODE
 readonly raw_linker_signature_details="$(codesign -dvv "$addon" 2>&1)"
 if ! grep -E '^CodeDirectory .*flags=.*adhoc,linker-signed' <<<"$raw_linker_signature_details" >/dev/null ||
    ! grep -Fx 'Signature=adhoc' <<<"$raw_linker_signature_details" >/dev/null ||
@@ -216,6 +237,7 @@ const sourceInputs = [
   'ispo/inference/scripts/package-darwin-arm64.sh',
   'ispo/inference/scripts/run-fresh-smoke-series.sh',
   'ispo/inference/scripts/run-smoke.js',
+  'ispo/inference/scripts/test-executor-quiescence.js',
   'ispo/inference/scripts/validate-cyclonedx-sbom.js',
   'ispo/inference/fixtures/tinyllama-15m-stories-q2-k.json',
   'ispo/inference/fixtures/TINYLLAMA-15M-STORIES-MIT.txt',
@@ -294,6 +316,7 @@ const inputManifest = {
     deploymentTarget: '14.5',
     architecture: 'darwin-arm64',
     sourceLayout: 'clean-preset-root',
+    testOnlyHooks: 'disabled',
     sources: ['direct N-API adapter', 'static llama.cpp Llama family', 'static ggml CPU/Accelerate', 'static ggml Metal'],
     disabled: ['dynamic backend discovery', 'HTTP', 'RPC', 'curl', 'server', 'examples', 'tests'],
     metalShaders: 'embedded',

@@ -102,15 +102,7 @@ class EnvironmentState final {
         try {
             auto request = std::make_shared<GenerationRequest>(
                 GenerationRequest{.core = std::move(active_core), .stream = stream});
-            std::unique_lock lock(generation_executor_mutex_);
-            if (generation_executor_stopping_) {
-                stream->request_cancel();
-                return stream->terminal_step();
-            }
-            ensure_generation_executor_locked();
-            generation_request_ = request;
-            generation_executor_ready_.notify_one();
-            generation_executor_done_.wait(lock, [&request] { return request->complete; });
+            execute_generation_request(request);
             return request->result;
         } catch (...) {
             stream->request_cancel();
@@ -163,6 +155,41 @@ class EnvironmentState final {
     }
 
     void shutdown() noexcept { shutdown_core(false); }
+
+#if defined(ISPO_INFERENCE_TESTING)
+    void arm_generation_executor_barrier_for_test() {
+        std::lock_guard lock(generation_executor_test_mutex_);
+        if (generation_executor_test_barrier_armed_) {
+            throw std::runtime_error("generation executor test barrier is already armed");
+        }
+        generation_executor_test_barrier_armed_ = true;
+        generation_executor_test_barrier_reached_ = false;
+        generation_executor_test_barrier_released_ = false;
+        generation_executor_test_probe_returned_.store(false, std::memory_order_release);
+    }
+
+    [[nodiscard]] bool generation_executor_barrier_reached_for_test() const noexcept {
+        std::lock_guard lock(generation_executor_test_mutex_);
+        return generation_executor_test_barrier_reached_;
+    }
+
+    [[nodiscard]] bool generation_executor_probe_returned_for_test() const noexcept {
+        return generation_executor_test_probe_returned_.load(std::memory_order_acquire);
+    }
+
+    void release_generation_executor_barrier_for_test() {
+        if (!release_generation_executor_barrier()) {
+            throw std::runtime_error("generation executor test barrier is not armed");
+        }
+    }
+
+    void execute_generation_executor_quiescence_probe_for_test() {
+        auto request = std::make_shared<GenerationRequest>();
+        request->test_only = true;
+        execute_generation_request(request);
+        generation_executor_test_probe_returned_.store(true, std::memory_order_release);
+    }
+#endif
 
     void begin_environment_cleanup(napi_async_cleanup_hook_handle hook) noexcept {
         // The Node-API cleanup-handle destructor schedules work on the owning
@@ -250,7 +277,24 @@ class EnvironmentState final {
         std::shared_ptr<StreamSession> stream;
         StreamStep result;
         bool complete = false;
+        bool executor_quiescent = false;
+#if defined(ISPO_INFERENCE_TESTING)
+        bool test_only = false;
+#endif
     };
+
+    void execute_generation_request(const std::shared_ptr<GenerationRequest>& request) {
+        std::unique_lock lock(generation_executor_mutex_);
+        if (generation_executor_stopping_) {
+            throw std::runtime_error("local inference generation executor is stopping");
+        }
+        ensure_generation_executor_locked();
+        generation_request_ = request;
+        generation_executor_ready_.notify_one();
+        generation_executor_done_.wait(lock, [&request] {
+            return request->complete && request->executor_quiescent;
+        });
+    }
 
     void ensure_generation_executor_locked() {
         if (generation_executor_.joinable()) {
@@ -261,20 +305,23 @@ class EnvironmentState final {
     }
 
     void run_generation_executor() noexcept {
+        std::unique_lock lock(generation_executor_mutex_);
         while (true) {
-            std::shared_ptr<GenerationRequest> request;
-            {
-                std::unique_lock lock(generation_executor_mutex_);
-                generation_executor_ready_.wait(lock, [this] {
-                    return generation_executor_stopping_ || generation_request_ != nullptr;
-                });
-                if (generation_executor_stopping_) {
-                    return;
-                }
-                request = std::move(generation_request_);
+            generation_executor_ready_.wait(lock, [this] {
+                return generation_executor_stopping_ || generation_request_ != nullptr;
+            });
+            if (generation_executor_stopping_) {
+                return;
             }
+            std::shared_ptr<GenerationRequest> request = std::move(generation_request_);
+            lock.unlock();
 
             StreamStep result;
+#if defined(ISPO_INFERENCE_TESTING)
+            if (request->test_only) {
+                result = StreamStep{};
+            } else {
+#endif
             try {
                 result = ispo::inference::execute_next_in_metal_autorelease_scope(
                     *request->core, request->stream);
@@ -282,17 +329,32 @@ class EnvironmentState final {
                 request->stream->request_cancel();
                 result = request->stream->terminal_step();
             }
-
-            {
-                std::lock_guard lock(generation_executor_mutex_);
-                request->result = std::move(result);
-                request->complete = true;
+#if defined(ISPO_INFERENCE_TESTING)
             }
+#endif
+
+            lock.lock();
+            request->result = std::move(result);
+            request->complete = true;
+            generation_executor_done_.notify_all();
+            lock.unlock();
+#if defined(ISPO_INFERENCE_TESTING)
+            pause_after_generation_completion_for_test();
+#endif
+            lock.lock();
+            // `wait()` below releases this lock atomically. A pull result is
+            // published only after this acknowledgement, so the caller cannot
+            // observe a completed demand while the executor still carries
+            // post-demand Metal/Objective-C settlement work.
+            request->executor_quiescent = true;
             generation_executor_done_.notify_all();
         }
     }
 
     void stop_generation_executor() noexcept {
+#if defined(ISPO_INFERENCE_TESTING)
+        (void)release_generation_executor_barrier();
+#endif
         std::thread executor;
         {
             std::lock_guard lock(generation_executor_mutex_);
@@ -323,6 +385,36 @@ class EnvironmentState final {
     std::shared_ptr<GenerationRequest> generation_request_;
     std::thread generation_executor_;
     bool generation_executor_stopping_ = false;
+#if defined(ISPO_INFERENCE_TESTING)
+    bool release_generation_executor_barrier() noexcept {
+        std::lock_guard lock(generation_executor_test_mutex_);
+        if (!generation_executor_test_barrier_armed_) {
+            return false;
+        }
+        generation_executor_test_barrier_released_ = true;
+        generation_executor_test_barrier_released_condition_.notify_all();
+        return true;
+    }
+
+    void pause_after_generation_completion_for_test() noexcept {
+        std::unique_lock lock(generation_executor_test_mutex_);
+        if (!generation_executor_test_barrier_armed_) {
+            return;
+        }
+        generation_executor_test_barrier_reached_ = true;
+        generation_executor_test_barrier_released_condition_.wait(lock, [this] {
+            return generation_executor_test_barrier_released_;
+        });
+        generation_executor_test_barrier_armed_ = false;
+    }
+
+    mutable std::mutex generation_executor_test_mutex_;
+    std::condition_variable generation_executor_test_barrier_released_condition_;
+    std::atomic<bool> generation_executor_test_probe_returned_{false};
+    bool generation_executor_test_barrier_armed_ = false;
+    bool generation_executor_test_barrier_reached_ = false;
+    bool generation_executor_test_barrier_released_ = false;
+#endif
 };
 
 void environment_cleanup(napi_async_cleanup_hook_handle hook, void* data) {
@@ -642,6 +734,72 @@ Napi::Value Shutdown(const Napi::CallbackInfo& info) {
     });
 }
 
+#if defined(ISPO_INFERENCE_TESTING)
+class ExecutorQuiescenceProbeWorker final : public Napi::AsyncWorker {
+  public:
+    ExecutorQuiescenceProbeWorker(Napi::Env env, std::shared_ptr<EnvironmentState> state,
+                                  Napi::Promise::Deferred deferred)
+        : Napi::AsyncWorker(env), state_(std::move(state)), deferred_(deferred) {}
+
+    void Execute() override {
+        try {
+            state_->execute_generation_executor_quiescence_probe_for_test();
+        } catch (const std::exception& error) {
+            SetError(error.what());
+        } catch (...) {
+            SetError("generation executor quiescence probe failed");
+        }
+    }
+
+    void OnOK() override { deferred_.Resolve(Env().Undefined()); }
+
+    void OnError(const Napi::Error& error) override { deferred_.Reject(error.Value()); }
+
+  private:
+    std::shared_ptr<EnvironmentState> state_;
+    Napi::Promise::Deferred deferred_;
+};
+
+Napi::Value TestArmExecutorQuiescenceBarrier(const Napi::CallbackInfo& info) {
+    return synchronous_callback(info, [&info] {
+        environment_state(info.Env()).arm_generation_executor_barrier_for_test();
+        return info.Env().Undefined();
+    });
+}
+
+Napi::Value TestExecutorQuiescenceBarrierReached(const Napi::CallbackInfo& info) {
+    return synchronous_callback(info, [&info] {
+        return Napi::Boolean::New(
+            info.Env(), environment_state(info.Env()).generation_executor_barrier_reached_for_test());
+    });
+}
+
+Napi::Value TestExecutorQuiescenceProbeReturned(const Napi::CallbackInfo& info) {
+    return synchronous_callback(info, [&info] {
+        return Napi::Boolean::New(
+            info.Env(), environment_state(info.Env()).generation_executor_probe_returned_for_test());
+    });
+}
+
+Napi::Value TestReleaseExecutorQuiescenceBarrier(const Napi::CallbackInfo& info) {
+    return synchronous_callback(info, [&info] {
+        environment_state(info.Env()).release_generation_executor_barrier_for_test();
+        return info.Env().Undefined();
+    });
+}
+
+Napi::Value TestRunExecutorQuiescenceProbe(const Napi::CallbackInfo& info) {
+    return synchronous_callback(info, [&info] {
+        const Napi::Promise::Deferred deferred = Napi::Promise::Deferred::New(info.Env());
+        auto worker = std::make_unique<ExecutorQuiescenceProbeWorker>(
+            info.Env(), environment_state_ptr(info.Env()), deferred);
+        worker->Queue();
+        (void)worker.release();
+        return deferred.Promise();
+    });
+}
+#endif
+
 Napi::Object Register(Napi::Env env, Napi::Object exports) {
     auto state = std::make_shared<EnvironmentState>();
     auto* state_holder = new std::shared_ptr<EnvironmentState>(std::move(state));
@@ -668,6 +826,18 @@ Napi::Object Register(Napi::Env env, Napi::Object exports) {
     exports.Set("metrics", Napi::Function::New(env, MetricsMethod));
     exports.Set("reset", Napi::Function::New(env, Reset));
     exports.Set("shutdown", Napi::Function::New(env, Shutdown));
+#if defined(ISPO_INFERENCE_TESTING)
+    exports.Set("__testArmExecutorQuiescenceBarrier",
+                Napi::Function::New(env, TestArmExecutorQuiescenceBarrier));
+    exports.Set("__testExecutorQuiescenceBarrierReached",
+                Napi::Function::New(env, TestExecutorQuiescenceBarrierReached));
+    exports.Set("__testExecutorQuiescenceProbeReturned",
+                Napi::Function::New(env, TestExecutorQuiescenceProbeReturned));
+    exports.Set("__testReleaseExecutorQuiescenceBarrier",
+                Napi::Function::New(env, TestReleaseExecutorQuiescenceBarrier));
+    exports.Set("__testRunExecutorQuiescenceProbe",
+                Napi::Function::New(env, TestRunExecutorQuiescenceProbe));
+#endif
     return exports;
 }
 

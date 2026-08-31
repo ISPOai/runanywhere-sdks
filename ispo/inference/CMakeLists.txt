@@ -71,6 +71,8 @@ if(NOT EXISTS "${_ispo_napi_dir}/node-addon-api/napi.h")
         "ISPO inference artifact requires npm ci --ignore-scripts in bindings/electron/native")
 endif()
 
+option(ISPO_INFERENCE_TESTING "Enable test-only local-inference native hooks" OFF)
+
 add_library(ispo_inference_core STATIC core/inference_core.cpp)
 target_include_directories(ispo_inference_core PUBLIC
     "${CMAKE_CURRENT_SOURCE_DIR}/core"
@@ -96,6 +98,9 @@ target_include_directories(ispo_local_inference_native PRIVATE
     "${_ispo_napi_dir}/node-api-headers/include")
 target_compile_definitions(ispo_local_inference_native PRIVATE
     NAPI_VERSION=8 NODE_ADDON_API_DISABLE_DEPRECATED BUILDING_NODE_EXTENSION)
+if(ISPO_INFERENCE_TESTING)
+    target_compile_definitions(ispo_local_inference_native PRIVATE ISPO_INFERENCE_TESTING=1)
+endif()
 target_compile_features(ispo_local_inference_native PRIVATE cxx_std_20)
 target_compile_options(ispo_local_inference_native PRIVATE
     -ffunction-sections -fdata-sections -fvisibility=hidden
