@@ -628,3 +628,42 @@ catalog admission, publication, merge, or independent review is claimed by
 this source proposal. The authorized five-by-six matrices remain unconsumed
 and may run only once each after independent raw-linker reproduction of the
 exact `.9` head.
+
+## 0.20.31-ispo.9 signed-candidate review provenance
+
+This later provenance-only record binds the signed candidate back to the
+unchanged `.9` implementation commit
+`3eed9521811a54b2690d1b890b06cf879243fbfc`, whose parent is the accepted
+`.8` head `04dcc0e2b4614145b24020c95fde4fe3301936ea`. It changes no runtime,
+native, packaging, or test source and is intentionally outside the candidate
+whose already-created input manifest names the implementation commit. The
+separate review head therefore records non-circular evidence without changing
+any candidate input.
+
+| Evidence | SHA-256 |
+| --- | --- |
+| Raw linker addon before explicit signing | `8dc813f26991fbbd42ceda2ed9b39e75364dd614ed16b666bcc6c820631bea20` |
+| Signed candidate archive | `3361967b4f60eaf91860fc1c611d1d368bba127a0bfd5827bd83c792d2fac47c` |
+| Adjacent archive-checksum file | `845f0bf934b412f704a75ea1f0a8adc9152d1d7af697d9680d0b1f778719560c` |
+| Signed native addon | `e26a2b652094e52338dff96753dc7b25bacee4d3cf239f263fe275347cee0344` |
+| Artifact manifest | `27631a9697047e94e579b5f858010000ad561a1374992f4928d1b8005db4d9dc` |
+| Input manifest | `dc71c74c3cb223a43a6e2bb8681fabdf627f2be9cefac93e5432bf31acb949b7` |
+| CycloneDX SBOM | `45ee77d44ec2d879e4b15c15c76622af6a300b6134abf0103b7c112fbc4caaed` |
+| SBOM validation receipt | `5052e88a380049c5b1ff79344443d119cb998fb51d7a63e3519db21bb54c59ab` |
+| Terra five-by-six matrix log | `3b5a5b188d54af49270457f87c3ff61c024d69a97ed4a72e50da5e640de85133` |
+| Sol five-by-six matrix log | `ce89cb85e5151e739b35547be195838f04eaa17ba0fe06eb917f8fa7a7f4b7d1` |
+
+The exact signed addon carries hardened-runtime Developer ID Application
+signing for Team `4L8CX8AY6M` with a secure timestamp. Independent review
+verified its macOS 14.5 floor, sealed system-only graph, sole global N-API
+export, exact production property set, complete non-circular manifests, SBOM,
+notices, and absence of model weights. All five fresh Terra processes and all
+five fresh Sol processes passed positive Metal, CPU/Accelerate, injected Metal
+load fallback, pull/backpressure, cancellation, lifecycle, GC, and exit checks;
+stalled growth stayed at or below 49,152 bytes and plateau growth stayed at or
+below 3,457,024 bytes.
+
+The independent signed-artifact review passed before any governance binding.
+This amendment itself creates no tag or ruleset, updates no host policy, merges
+or publishes no release, downloads no model, runs no E2E test, and mutates no
+live application.
