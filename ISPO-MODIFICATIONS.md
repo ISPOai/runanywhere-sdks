@@ -560,9 +560,37 @@ ordinary shutdown releases and drains the boundary before the executor joins.
 The release build still has no test exports; package assembly checks the exact
 sorted production export set and self-tests exact, missing, and extra sets.
 
-No `.8` archive, raw identity, signing, tag, policy update, catalog admission,
-publication, merge, or independent review is claimed by this source change.
-Its canonical raw pre-explicit-sign identity may be recorded only after two
-fresh isolated public roots reproduce the linker-generated output byte-for-byte.
-The required unsandboxed five-by-six Metal smoke remains a one-time post-repair
-gate and is not run by this source proposal.
+No `.8` archive, signing, tag, policy update, catalog admission, publication,
+merge, or independent review is claimed by this source change. The required
+unsandboxed five-by-six Metal smoke remains a one-time post-repair gate and is
+not run by this source proposal.
+
+### `.8` raw linker reproduction
+
+The post-autorelease implementation source is public commit
+`1a0a0f256b0ff337e18b1b243f8d930ce1573d6c` on
+`ispo/phase1-5-native-settlement`, descended from reviewed `.7` commit
+`eeb7b762204cd3c57eedc64161b34b2ae6e82cda`. Two fresh isolated public
+HTTPS-clone roots checked out that implementation commit, installed the native
+package with `npm ci --ignore-scripts` under separate empty HOME and npm-cache
+directories, and built the release native target with separate temporary
+directories. Neither build invoked an explicit code-sign mutation, packaging,
+or smoke fixture.
+
+The two linker outputs were byte-identical at SHA-256
+`b86960c26b317f1bdfd16155fd18564ed880079024d21c19f54b4faaa40c7cae`.
+Each output passed `codesign --verify --strict`; `codesign -dvv` reported the
+linker-generated `Signature=adhoc`, `flags=0x20002(adhoc,linker-signed)`, and
+no TeamIdentifier. The compiled source objects were also byte-identical across
+both roots:
+
+| Object | SHA-256 |
+| --- | --- |
+| `native/addon.cpp.o` | `63c2913402dcb3fcd11ff42a20f38ef7d506ff55ade4000cac1e08f5924ac71a` |
+| `native/metal-executor-scope.mm.o` | `617ebf32d1806396573d275ad2a18ec11725bd1be0600f0f7dd1f2d845c3120e` |
+| `core/inference_core.cpp.o` | `c63f11416f8e965ebda17ad04a44291139c605a2f3fa9ea941e376ca3f1a8fea` |
+
+The enclosing Darwin static archive is not an identity input: its sole compiled
+member was byte-identical, while its `__.SYMDEF SORTED` and member headers carry
+the archive creation time. This later provenance-only record creates no
+archive, signing result, publication, tag, or admission claim.
