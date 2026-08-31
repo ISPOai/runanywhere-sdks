@@ -65,4 +65,3 @@ if (addonPath === '--self-test') {
 } else {
   throw new Error('usage: node verify-production-exports.js /absolute/path/addon.node | --self-test');
 }
-
