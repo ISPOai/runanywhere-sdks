@@ -193,6 +193,10 @@ class EnvironmentState final {
         }
         return active_core != nullptr && active_core->static_metal_residency_disabled_for_test();
     }
+
+    [[nodiscard]] std::string render_chat_template_for_test(const std::string& prompt) {
+        return core().render_chat_template_for_test(prompt);
+    }
 #endif
 
     void begin_environment_cleanup(napi_async_cleanup_hook_handle hook) noexcept {
@@ -768,6 +772,15 @@ Napi::Value TestStaticMetalResidencyDisabled(const Napi::CallbackInfo& info) {
             info.Env(), environment_state(info.Env()).static_metal_residency_disabled_for_test());
     });
 }
+
+Napi::Value TestRenderChatTemplate(const Napi::CallbackInfo& info) {
+    return synchronous_callback(info, [&info] {
+        require_string(info, 0, "__testRenderChatTemplate(prompt)");
+        return Napi::String::New(
+            info.Env(), environment_state(info.Env()).render_chat_template_for_test(
+                            info[0].As<Napi::String>().Utf8Value()));
+    });
+}
 #endif
 
 Napi::Object Register(Napi::Env env, Napi::Object exports) {
@@ -809,6 +822,7 @@ Napi::Object Register(Napi::Env env, Napi::Object exports) {
                 Napi::Function::New(env, TestRunPostAutoreleaseSettlementProbe));
     exports.Set("__testStaticMetalResidencyDisabled",
                 Napi::Function::New(env, TestStaticMetalResidencyDisabled));
+    exports.Set("__testRenderChatTemplate", Napi::Function::New(env, TestRenderChatTemplate));
 #endif
     return exports;
 }

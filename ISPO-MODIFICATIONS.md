@@ -79,6 +79,7 @@ source package:
 | Path | ISPO package name | Version | Publication state |
 | --- | --- | --- | --- |
 | `bindings/electron/native` | `@ispo/runanywhere-local-inference-native` | `0.20.31-ispo.9` | private; unadmitted proposal; never publish from Phase 0/1 |
+| `bindings/electron/native` | `@ispo/runanywhere-local-inference-native` | `0.20.31-ispo.10` | additive local Qwen3 source proposal; not admitted, signed, tagged, merged, or published |
 
 The future host-private runtime artifact is reserved as
 `@ispo/runanywhere-local-inference` with an ISPO prerelease or release version
@@ -667,3 +668,59 @@ The independent signed-artifact review passed before any governance binding.
 This amendment itself creates no tag or ruleset, updates no host policy, merges
 or publishes no release, downloads no model, runs no E2E test, and mutates no
 live application.
+
+## 0.20.31-ispo.10 Qwen3 architecture-support proposal
+
+This additive local proposal starts from the public
+`ispo/v0.20.31-ispo.9` source tag and leaves the `.9` implementation,
+provenance, archive, signed addon, and rollback record unchanged. It exists
+because the exact retained Qwen3 GGUF reaches llama.cpp metadata dispatch on
+`.9` and fails before backend selection with an unsupported `qwen3`
+architecture. It is not a prompt, template, context, generation, lifecycle,
+or Metal fallback result.
+
+The smallest verified upstream support boundary is the signed llama.cpp source
+commit `d3bd7193ba66c15963fd1c59448f22019a8caf6e` (`b5092`, “llama : Support
+Qwen3 and Qwen3MoE”). Its immutable RunAnywhere archive is
+`d086756e37fda7fff0d671d8106601232258d6f95384d04bf69b126445ad201d`; the
+selected source `LICENSE` remains MIT with SHA-256
+`e562a2ddfaf8280537795ac5ecd34e3012b6582a147ef69ba6a6a5c08c84757d`.
+The preceding source revision has no Qwen3 architecture entry, tensor map, or
+graph builder. The proposal therefore upgrades the closed dependency rather
+than adding an ISPO-owned architecture shim.
+
+The fork-owned static sealing patch is rebased to that exact source. It retains
+the closed compiled CPU/Accelerate and Metal registry, rejects dynamic backend
+loads, excludes filesystem/environment discovery from the sealed path,
+disables Metal residency sets, limits architecture dispatch to Qwen3, and
+removes dormant transport and repository strings from that map. The update
+adapts only genuine upstream API changes: it uses the b5092 KV-clear API and
+does not assign a context option that b5092 does not expose. The one-demand,
+one-token pull executor, independent cancellation, post-backend and
+post-autorelease settlement, lifecycle teardown, production exports, macOS
+14.5 floor, and direct N-API boundary remain unchanged.
+
+The core now obtains the loaded model's compiled chat template through
+llama.cpp, renders one bounded user message with the assistant generation
+prompt, and tokenizes that result. A test-only hook and the bounded Qwen3
+conformance helper require the exact single-user ChatML form, 2048-token
+context admission, actual bounded completion, and unload/shutdown cleanup.
+The helper records only a bounded result category, context count, backend
+category, and completion byte count; it records no model location, source
+identity, credential, or backend handle. Its model-free contract test rejects
+template changes and verifies cleanup on failure.
+
+The `.10` package inputs now name the new immutable source and helper tests;
+the SBOM's llama.cpp component follows the same archive receipt and the notice
+bundle retains the selected MIT text. The former Llama-only smoke-fixture
+metadata and notice are not staged for `.10`. Package staging rejects named
+model-weight extensions and leading GGUF/ggml signatures before manifests or
+archives are emitted. No model bytes, model download capability, model URL,
+or model license text is added to source, native code, package input, SBOM, or
+artifact.
+
+This record proves only a local source proposal and focused build/test work.
+It claims no Terra or Sol final conformance matrix, signature, archive, tag,
+policy binding, catalog descriptor, application package, merge, publication,
+or E2E execution. Those gates remain separate exact-head work after two fresh
+isolated public-root raw-artifact reproductions.

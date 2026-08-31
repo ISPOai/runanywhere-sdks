@@ -93,6 +93,7 @@ class InferenceCore {
     [[nodiscard]] bool metal_initialized() const;
 #if defined(ISPO_INFERENCE_TESTING)
     [[nodiscard]] bool static_metal_residency_disabled_for_test() const;
+    [[nodiscard]] std::string render_chat_template_for_test(const std::string& prompt) const;
 #endif
     [[nodiscard]] bool loaded() const;
     [[nodiscard]] Backend backend() const;

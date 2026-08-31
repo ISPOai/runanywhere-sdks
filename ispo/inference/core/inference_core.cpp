@@ -11,7 +11,7 @@
 #include "llama.h"
 
 #if defined(ISPO_INFERENCE_TESTING)
-#include "ggml-metal-device.h"
+#include "ggml-metal-impl.h"
 #endif
 
 namespace ispo::inference {
@@ -20,10 +20,11 @@ namespace {
 constexpr uint32_t kMaximumContextTokens = 4096;
 constexpr uint32_t kMaximumGeneratedTokens = 256;
 constexpr size_t kMaximumPromptBytes = 64 * 1024;
+constexpr size_t kMaximumFormattedPromptBytes = kMaximumPromptBytes + 256;
 constexpr size_t kMaximumDeltaBytes = 4096;
 
 bool metal_is_compiled() {
-    return ggml_backend_reg_by_name("MTL") != nullptr;
+    return ggml_backend_dev_by_type(GGML_BACKEND_DEVICE_TYPE_GPU) != nullptr;
 }
 
 bool probe_metal_backend() {
@@ -51,6 +52,28 @@ std::vector<llama_token> tokenize(const llama_vocab* vocab, const std::string& p
         throw std::runtime_error("prompt tokenization failed");
     }
     return tokens;
+}
+
+std::string render_qwen3_chat_prompt(const llama_model* model, const std::string& prompt) {
+    const char* const template_source = llama_model_chat_template(model, nullptr);
+    if (template_source == nullptr) {
+        throw std::runtime_error("the loaded Qwen3 model has no chat template");
+    }
+
+    const llama_chat_message message{.role = "user", .content = prompt.c_str()};
+    const int32_t rendered_size =
+        llama_chat_apply_template(template_source, &message, 1, true, nullptr, 0);
+    if (rendered_size <= 0 || static_cast<size_t>(rendered_size) > kMaximumFormattedPromptBytes) {
+        throw std::runtime_error("the loaded Qwen3 chat template produced an invalid prompt");
+    }
+
+    std::vector<char> rendered(static_cast<size_t>(rendered_size) + 1);
+    const int32_t written = llama_chat_apply_template(
+        template_source, &message, 1, true, rendered.data(), static_cast<int32_t>(rendered.size()));
+    if (written != rendered_size) {
+        throw std::runtime_error("the loaded Qwen3 chat template could not be rendered");
+    }
+    return {rendered.data(), static_cast<size_t>(written)};
 }
 
 std::string token_piece(const llama_vocab* vocab, llama_token token) {
@@ -189,8 +212,15 @@ bool InferenceCore::static_metal_residency_disabled_for_test() const {
     if (!backend_initialized_ || !metal_probe_succeeded_) {
         return false;
     }
-    const ggml_metal_device_t device = ggml_metal_device_get(0);
-    return device != nullptr && !ggml_metal_device_get_props(device)->use_residency_sets;
+    return ggml_metal_ispo_static_residency_disabled_for_test();
+}
+
+std::string InferenceCore::render_chat_template_for_test(const std::string& prompt) const {
+    std::lock_guard lock(mutex_);
+    if (model_ == nullptr) {
+        throw std::runtime_error("no local model is loaded");
+    }
+    return render_qwen3_chat_prompt(model_, prompt);
 }
 #endif
 
@@ -264,7 +294,6 @@ void InferenceCore::load_exact_local_model(const std::string& path, const LoadOp
     context_params.n_threads_batch = options.threads;
     context_params.no_perf = false;
     context_params.offload_kqv = backend_ == Backend::kMetal;
-    context_params.op_offload = backend_ == Backend::kMetal;
     context_ = llama_init_from_model(model_, context_params);
     if (context_ == nullptr && backend_ == Backend::kMetal) {
         llama_model_free(model_);
@@ -272,7 +301,6 @@ void InferenceCore::load_exact_local_model(const std::string& path, const LoadOp
         model_ = load_model(false);
         backend_ = Backend::kCpu;
         context_params.offload_kqv = false;
-        context_params.op_offload = false;
         if (model_ != nullptr) {
             context_ = llama_init_from_model(model_, context_params);
         }
@@ -347,7 +375,8 @@ bool InferenceCore::start_locked(StreamSession& stream) {
     stream.metrics_.backend = backend_;
 
     const llama_vocab* vocab = llama_model_get_vocab(model_);
-    const std::vector<llama_token> prompt_tokens = tokenize(vocab, stream.prompt_);
+    const std::string formatted_prompt = render_qwen3_chat_prompt(model_, stream.prompt_);
+    const std::vector<llama_token> prompt_tokens = tokenize(vocab, formatted_prompt);
     stream.metrics_.prompt_tokens = prompt_tokens.size();
     if (prompt_tokens.size() > stream.context_tokens_) {
         finish_locked(stream, FinishReason::kError);
@@ -530,7 +559,7 @@ void InferenceCore::abandon_stream(const std::shared_ptr<StreamSession>& stream)
 void InferenceCore::clear_generation_locked() {
     if (context_ != nullptr) {
         llama_set_abort_callback(context_, nullptr, nullptr);
-        llama_memory_clear(llama_get_memory(context_), true);
+        llama_kv_self_clear(context_);
     }
     if (sampler_ != nullptr) {
         llama_sampler_reset(sampler_);

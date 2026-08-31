@@ -3,7 +3,7 @@ set -euo pipefail
 
 readonly repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)"
 readonly preset="ispo-darwin-arm64-inference-release"
-readonly version="0.20.31-ispo.9"
+readonly version="0.20.31-ispo.10"
 readonly output_dir="${ISPO_ARTIFACT_OUTPUT:-$repo_root/dist/ispo-local-inference}"
 readonly stage_dir="$output_dir/ispo-local-inference-darwin-arm64-$version"
 readonly archive="$output_dir/ispo-local-inference-darwin-arm64-$version.zip"
@@ -119,12 +119,8 @@ cp "$repo_root/bindings/electron/native/node_modules/node-addon-api/LICENSE.md" 
     "$package_stage_dir/notices/NODE-ADDON-API-MIT.txt"
 cp "$repo_root/bindings/electron/native/node_modules/node-api-headers/LICENSE" \
     "$package_stage_dir/notices/NODE-API-HEADERS-MIT.txt"
-cp "$repo_root/ispo/inference/fixtures/TINYLLAMA-15M-STORIES-MIT.txt" \
-    "$package_stage_dir/notices/TINYLLAMA-15M-STORIES-MIT.txt"
 cp "$repo_root/docs/ISPO-THIRD-PARTY-NOTICES.md" "$package_stage_dir/notices/THIRD-PARTY-NOTICES.md"
 cp "$repo_root/ISPO-MODIFICATIONS.md" "$package_stage_dir/metadata/ISPO-MODIFICATIONS.md"
-cp "$repo_root/ispo/inference/fixtures/tinyllama-15m-stories-q2-k.json" \
-    "$package_stage_dir/metadata/smoke-fixture.json"
 
 node - "$package_stage_dir/metadata" "$repo_root" "$llama_source" "$version" "$canonical_pre_explicit_sign_identity" <<'NODE'
 'use strict';
@@ -195,9 +191,6 @@ const nativePackages = Object.keys(nativeLock.packages)
   .filter((entry) => entry.startsWith('node_modules/') && nativeLock.packages[entry].integrity)
   .sort()
   .map(packageLicense);
-const fixturePath = path.join(repositoryRoot, 'ispo/inference/fixtures/tinyllama-15m-stories-q2-k.json');
-const fixture = JSON.parse(fs.readFileSync(fixturePath, 'utf8'));
-const fixtureLicensePath = path.join(repositoryRoot, 'ispo/inference/fixtures/TINYLLAMA-15M-STORIES-MIT.txt');
 const sourceInputs = [
   'CMakePresets.json',
   'bindings/electron/native/package.json',
@@ -212,17 +205,16 @@ const sourceInputs = [
   'ispo/inference/patches/llama-static-backend-registry.patch',
   'ispo/inference/scripts/audit-artifact.sh',
   'ispo/inference/scripts/fetch-cyclonedx-1.5-schema.sh',
-  'ispo/inference/scripts/fetch-smoke-fixture.sh',
   'ispo/inference/scripts/package-development-darwin-arm64.sh',
   'ispo/inference/scripts/package-darwin-arm64.sh',
-  'ispo/inference/scripts/run-fresh-smoke-series.sh',
-  'ispo/inference/scripts/run-smoke.js',
+  'ispo/inference/scripts/run-qwen3-conformance.js',
   'ispo/inference/scripts/test-executor-quiescence.js',
+  'ispo/inference/scripts/test-qwen3-conformance.js',
+  'ispo/inference/scripts/test-verify-package-no-weights.js',
   'ispo/inference/scripts/test-static-metal-residency.js',
+  'ispo/inference/scripts/verify-package-no-weights.js',
   'ispo/inference/scripts/verify-production-exports.js',
   'ispo/inference/scripts/validate-cyclonedx-sbom.js',
-  'ispo/inference/fixtures/tinyllama-15m-stories-q2-k.json',
-  'ispo/inference/fixtures/TINYLLAMA-15M-STORIES-MIT.txt',
 ].map(sourceFile);
 const licenseHashes = [
   { name: 'RunAnywhere SDK source', path: 'LICENSE', sha256: sha256(path.join(repositoryRoot, 'LICENSE')) },
@@ -232,11 +224,6 @@ const licenseHashes = [
     path: component.license.path,
     sha256: component.license.sha256,
   })),
-  {
-    name: 'TinyLlama 15M Stories fixture record',
-    path: 'ispo/inference/fixtures/TINYLLAMA-15M-STORIES-MIT.txt',
-    sha256: sha256(fixtureLicensePath),
-  },
   {
     name: 'CycloneDX specification schema',
     source: 'https://raw.githubusercontent.com/CycloneDX/specification/c320fc0f0b46873864927d9d5684eea7ba439728/LICENSE',
@@ -255,9 +242,9 @@ const inputManifest = {
   canonicalPreExplicitSignIdentity,
   llamaCpp: {
     repository: 'https://github.com/RunanywhereAI/llama.cpp.git',
-    revision: '79e2eb5eef131799ca6a2e2e342056a37a148df8',
-    archive: 'https://github.com/RunanywhereAI/llama.cpp/archive/79e2eb5eef131799ca6a2e2e342056a37a148df8.tar.gz',
-    archiveSha256: '67d40b994c948d6536c50a1fe613cc0e4710af2567667344011a40f4dcbe72e9',
+    revision: 'd3bd7193ba66c15963fd1c59448f22019a8caf6e',
+    archive: 'https://github.com/RunanywhereAI/llama.cpp/archive/d3bd7193ba66c15963fd1c59448f22019a8caf6e.tar.gz',
+    archiveSha256: 'd086756e37fda7fff0d671d8106601232258d6f95384d04bf69b126445ad201d',
     patchSha256: sha256(path.join(repositoryRoot, 'ispo/inference/patches/llama-static-backend-registry.patch')),
     licenseSha256: sha256(path.join(llamaSource, 'LICENSE')),
   },
@@ -277,13 +264,6 @@ const inputManifest = {
     },
   },
   npm: nativePackages,
-  testFixture: {
-    ...fixture,
-    licenseFile: {
-      path: 'ispo/inference/fixtures/TINYLLAMA-15M-STORIES-MIT.txt',
-      sha256: sha256(fixtureLicensePath),
-    },
-  },
   sourceInputs,
   licenseHashes,
   toolchain: {
@@ -299,15 +279,15 @@ const inputManifest = {
     architecture: 'darwin-arm64',
     sourceLayout: 'clean-preset-root',
     testOnlyHooks: 'disabled',
-    sources: ['direct N-API adapter', 'static llama.cpp Llama family', 'static ggml CPU/Accelerate', 'static ggml Metal'],
-    disabled: ['dynamic backend discovery', 'HTTP', 'RPC', 'curl', 'server', 'examples', 'tests'],
+    sources: ['direct N-API adapter', 'static llama.cpp Qwen3 architecture', 'static ggml CPU/Accelerate', 'static ggml Metal'],
+    disabled: ['dynamic backend discovery', 'dynamic model discovery', 'HTTP', 'RPC', 'curl', 'server', 'examples', 'tests'],
     metalShaders: 'embedded',
   },
 };
 const sbom = {
   bomFormat: 'CycloneDX',
   specVersion: '1.5',
-  serialNumber: 'urn:uuid:cf6d8cf5-f71a-5ee9-8cfc-2bc90bd2f65f',
+  serialNumber: 'urn:uuid:3fe268f1-1643-5dd9-9e2b-4891c06a386d',
   version: 1,
   metadata: {
     timestamp: '2026-01-01T00:00:00Z',
@@ -350,14 +330,6 @@ const sbom = {
     })),
     {
       type: 'file',
-      name: fixture.name,
-      version: fixture.sourceRevision,
-      hashes: [{ alg: 'SHA-256', content: fixture.sha256 }],
-      licenses: [{ license: { id: 'MIT' } }],
-      properties: [{ name: 'org.ispo.role', value: 'test-only-fixture-not-runtime-downloadable' }],
-    },
-    {
-      type: 'file',
       name: 'CycloneDX 1.5 schema',
       version: '1.5',
       hashes: [{ alg: 'SHA-256', content: inputManifest.cyclonedxSchema.sha256 }],
@@ -391,6 +363,8 @@ readonly schema_path="$build_dir/bom-1.5.schema.json"
 "$repo_root/ispo/inference/scripts/fetch-cyclonedx-1.5-schema.sh" "$schema_path"
 node "$repo_root/ispo/inference/scripts/validate-cyclonedx-sbom.js" \
     "$schema_path" "$package_stage_dir/metadata/sbom.json" > "$package_stage_dir/metadata/sbom-validation.json"
+
+node "$repo_root/ispo/inference/scripts/verify-package-no-weights.js" "$package_stage_dir"
 
 find "$package_stage_dir" -type f -exec touch -t "$artifact_timestamp" {} +
 (

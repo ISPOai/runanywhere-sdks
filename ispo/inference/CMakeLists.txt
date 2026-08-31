@@ -3,11 +3,11 @@ cmake_minimum_required(VERSION 3.24)
 include(FetchContent)
 
 set(ISPO_INFERENCE_LLAMA_REPOSITORY "https://github.com/RunanywhereAI/llama.cpp.git")
-set(ISPO_INFERENCE_LLAMA_REVISION "79e2eb5eef131799ca6a2e2e342056a37a148df8")
+set(ISPO_INFERENCE_LLAMA_REVISION "d3bd7193ba66c15963fd1c59448f22019a8caf6e")
 set(ISPO_INFERENCE_LLAMA_ARCHIVE
-    "https://github.com/RunanywhereAI/llama.cpp/archive/79e2eb5eef131799ca6a2e2e342056a37a148df8.tar.gz")
+    "https://github.com/RunanywhereAI/llama.cpp/archive/d3bd7193ba66c15963fd1c59448f22019a8caf6e.tar.gz")
 set(ISPO_INFERENCE_LLAMA_ARCHIVE_SHA256
-    "67d40b994c948d6536c50a1fe613cc0e4710af2567667344011a40f4dcbe72e9")
+    "d086756e37fda7fff0d671d8106601232258d6f95384d04bf69b126445ad201d")
 set(ISPO_INFERENCE_LLAMA_PATCH
     "${CMAKE_CURRENT_SOURCE_DIR}/patches/llama-static-backend-registry.patch")
 
@@ -32,7 +32,7 @@ set(GGML_METAL_EMBED_LIBRARY ON CACHE BOOL "" FORCE)
 set(GGML_ACCELERATE ON CACHE BOOL "" FORCE)
 set(GGML_BACKEND_DL OFF CACHE BOOL "" FORCE)
 set(GGML_ISPO_STATIC_ONLY ON CACHE BOOL "" FORCE)
-set(ISPO_LLAMA_ONLY ON CACHE BOOL "" FORCE)
+set(ISPO_QWEN3_ONLY ON CACHE BOOL "" FORCE)
 set(GGML_CPU_ALL_VARIANTS OFF CACHE BOOL "" FORCE)
 set(GGML_NATIVE OFF CACHE BOOL "" FORCE)
 set(GGML_VULKAN OFF CACHE BOOL "" FORCE)
@@ -62,8 +62,12 @@ foreach(_ispo_llama_target IN ITEMS llama ggml ggml-base ggml-cpu ggml-blas ggml
             "-ffile-prefix-map=${ispo_llamacpp_SOURCE_DIR}=third_party/llama.cpp")
     endif()
 endforeach()
-target_compile_definitions(llama PRIVATE ISPO_LLAMA_ONLY)
-target_compile_definitions(ggml-metal PRIVATE GGML_ISPO_STATIC_ONLY)
+target_compile_definitions(llama PRIVATE ISPO_QWEN3_ONLY)
+foreach(_ispo_static_target IN ITEMS ggml ggml-base ggml-metal)
+    if(TARGET ${_ispo_static_target})
+        target_compile_definitions(${_ispo_static_target} PRIVATE GGML_ISPO_STATIC_ONLY)
+    endif()
+endforeach()
 
 set(_ispo_napi_dir "${CMAKE_SOURCE_DIR}/bindings/electron/native/node_modules")
 if(NOT EXISTS "${_ispo_napi_dir}/node-addon-api/napi.h")
@@ -85,6 +89,9 @@ target_compile_options(ispo_inference_core PRIVATE
     "-ffile-prefix-map=${CMAKE_SOURCE_DIR}=."
     "-ffile-prefix-map=${CMAKE_BINARY_DIR}=build")
 if(ISPO_INFERENCE_TESTING)
+    if(TARGET ggml-metal)
+        target_compile_definitions(ggml-metal PRIVATE ISPO_INFERENCE_TESTING=1)
+    endif()
     target_include_directories(ispo_inference_core PRIVATE
         "${ispo_llamacpp_SOURCE_DIR}/ggml/src/ggml-metal")
     target_compile_definitions(ispo_inference_core PRIVATE ISPO_INFERENCE_TESTING=1)
@@ -119,4 +126,4 @@ target_link_options(ispo_local_inference_native PRIVATE
 set_property(TARGET ispo_local_inference_native APPEND PROPERTY BUILD_RPATH "@loader_path")
 set_target_properties(ispo_local_inference_native PROPERTIES INSTALL_RPATH "@loader_path")
 
-message(STATUS "ISPO local inference: direct core + llama.cpp + N-API adapter only")
+message(STATUS "ISPO local inference: direct core + static Qwen3 llama.cpp + N-API adapter only")

@@ -8,6 +8,7 @@ inference slice. It supplements, and never replaces, the complete upstream
 | --- | --- | --- |
 | RunAnywhere SDK source | `00e879fa818111054c02c8ad1f1a0398a4738f92`; root `LICENSE` | Preserve the full RunAnywhere License, copyright notice, modification notice, and eligibility review. Do not imply trademark permission. |
 | llama.cpp and ggml | `https://github.com/RunanywhereAI/llama.cpp.git` tag `runanywhere-b10453.4`, resolved commit `79e2eb5eef131799ca6a2e2e342056a37a148df8`; MIT | Ship the pinned source `LICENSE` as `LLAMA-CPP-MIT.txt`; the artifact input manifest records this patch's SHA-256 and resolved Git head. |
+| llama.cpp and ggml, Qwen3 `.10` proposal | `https://github.com/RunanywhereAI/llama.cpp.git` signed source commit `d3bd7193ba66c15963fd1c59448f22019a8caf6e`, archive SHA-256 `d086756e37fda7fff0d671d8106601232258d6f95384d04bf69b126445ad201d`; MIT source `LICENSE` SHA-256 `e562a2ddfaf8280537795ac5ecd34e3012b6582a147ef69ba6a6a5c08c84757d` | Ship the pinned source `LICENSE` as `LLAMA-CPP-MIT.txt`; retain the additive Qwen3 patch hash, archive receipt, SBOM component, and source-input manifest. This source proposal has no runtime admission or distribution claim. |
 | C++ configure dependencies | Abseil `255c84dadd029fd8ad25c5efb5933e47beaa00c7` (Apache-2.0); protobuf `35cd01f9fe9afbeea38cc7b979a3b6bfcde82c03` (BSD-3-Clause); nlohmann/json `55f93686c01528224f448c19128836e7df245f72` (MIT); libarchive `ded82291ab41d5e355831b96b0e1ff49e24d8939` (BSD-2-Clause) | Preserve each selected dependency's license and notice text in the artifact-specific notice bundle. |
 | Metal shader/resources and Apple frameworks | Generated from the pinned llama.cpp source and Apple SDK selected by Xcode; no Phase 0 artifact | Preserve any upstream resource notices; comply with the applicable Apple SDK/Xcode terms. Record SDK/Xcode version, resource provenance, and output hashes in the Phase 1 manifest. |
 | Node and Node-API | `node-addon-api` `8.9.0`, `node-api-headers` `1.9.0`; Node runtime version and npm SRIs recorded by release build | Ship their distributed MIT texts as `NODE-ADDON-API-MIT.txt` and `NODE-API-HEADERS-MIT.txt`. Do not treat N-API headers as ISPO-authored. |
@@ -38,3 +39,15 @@ download, or redistribute a model.
 
 The Phase 1 package script creates the artifact-specific notice bundle and
 records its SHA-256 entries in `metadata/artifact-manifest.sha256`.
+
+## Qwen3 `.10` proposal model boundary
+
+The additive `.10` source proposal updates only the sealed compiled llama.cpp
+source needed to parse and execute Qwen3 GGUF metadata. It carries no Qwen
+model, tokenizer asset, template asset, model URL, repository identity, or
+model license text as a package input. The bounded Qwen3 conformance helper
+accepts only an already independently verified external model file and writes
+no model location or source identity to its result. Admission, acquisition,
+license acceptance, and removal remain host-owned decisions outside the native
+package and its SBOM. The package stage rejects both model-weight filenames and
+GGUF/ggml file signatures before it emits a manifest or archive.

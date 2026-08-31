@@ -1,7 +1,7 @@
 {
   "name": "@ispo/runanywhere-local-inference-native",
-  "version": "0.20.31-ispo.9",
-  "description": "ISPO local-inference native N-API addon over the rac_* C ABI.",
+  "version": "0.20.31-ispo.10",
+  "description": "ISPO local-inference native N-API addon over a sealed static llama.cpp core.",
   "private": true,
   "license": "SEE LICENSE IN ../../../LICENSE",
   "type": "commonjs",
