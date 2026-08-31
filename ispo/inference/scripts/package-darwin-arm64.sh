@@ -3,7 +3,7 @@ set -euo pipefail
 
 readonly repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)"
 readonly preset="ispo-darwin-arm64-inference-release"
-readonly version="0.20.31-ispo.8"
+readonly version="0.20.31-ispo.9"
 readonly output_dir="${ISPO_ARTIFACT_OUTPUT:-$repo_root/dist/ispo-local-inference}"
 readonly stage_dir="$output_dir/ispo-local-inference-darwin-arm64-$version"
 readonly archive="$output_dir/ispo-local-inference-darwin-arm64-$version.zip"
@@ -218,6 +218,7 @@ const sourceInputs = [
   'ispo/inference/scripts/run-fresh-smoke-series.sh',
   'ispo/inference/scripts/run-smoke.js',
   'ispo/inference/scripts/test-executor-quiescence.js',
+  'ispo/inference/scripts/test-static-metal-residency.js',
   'ispo/inference/scripts/verify-production-exports.js',
   'ispo/inference/scripts/validate-cyclonedx-sbom.js',
   'ispo/inference/fixtures/tinyllama-15m-stories-q2-k.json',

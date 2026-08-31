@@ -84,6 +84,11 @@ target_compile_options(ispo_inference_core PRIVATE
     -ffunction-sections -fdata-sections -fvisibility=hidden
     "-ffile-prefix-map=${CMAKE_SOURCE_DIR}=."
     "-ffile-prefix-map=${CMAKE_BINARY_DIR}=build")
+if(ISPO_INFERENCE_TESTING)
+    target_include_directories(ispo_inference_core PRIVATE
+        "${ispo_llamacpp_SOURCE_DIR}/ggml/src/ggml-metal")
+    target_compile_definitions(ispo_inference_core PRIVATE ISPO_INFERENCE_TESTING=1)
+endif()
 
 add_library(ispo_local_inference_native MODULE
     native/addon.cpp

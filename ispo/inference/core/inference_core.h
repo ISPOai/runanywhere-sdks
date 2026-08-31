@@ -91,6 +91,9 @@ class InferenceCore {
     void initialize(bool force_cpu);
     [[nodiscard]] bool metal_compiled() const;
     [[nodiscard]] bool metal_initialized() const;
+#if defined(ISPO_INFERENCE_TESTING)
+    [[nodiscard]] bool static_metal_residency_disabled_for_test() const;
+#endif
     [[nodiscard]] bool loaded() const;
     [[nodiscard]] Backend backend() const;
     void load_exact_local_model(const std::string& path, const LoadOptions& options);

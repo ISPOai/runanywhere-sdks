@@ -10,6 +10,10 @@
 #include "ggml-backend.h"
 #include "llama.h"
 
+#if defined(ISPO_INFERENCE_TESTING)
+#include "ggml-metal-device.h"
+#endif
+
 namespace ispo::inference {
 namespace {
 
@@ -178,6 +182,17 @@ bool InferenceCore::metal_initialized() const {
     std::lock_guard lock(mutex_);
     return metal_probe_succeeded_;
 }
+
+#if defined(ISPO_INFERENCE_TESTING)
+bool InferenceCore::static_metal_residency_disabled_for_test() const {
+    std::lock_guard lock(mutex_);
+    if (!backend_initialized_ || !metal_probe_succeeded_) {
+        return false;
+    }
+    const ggml_metal_device_t device = ggml_metal_device_get(0);
+    return device != nullptr && !ggml_metal_device_get_props(device)->use_residency_sets;
+}
+#endif
 
 bool InferenceCore::loaded() const {
     std::lock_guard lock(mutex_);

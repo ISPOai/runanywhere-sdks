@@ -184,6 +184,15 @@ class EnvironmentState final {
         execute_generation_request(request);
         post_autorelease_settlement_probe_returned_.store(true, std::memory_order_release);
     }
+
+    [[nodiscard]] bool static_metal_residency_disabled_for_test() const {
+        std::shared_ptr<InferenceCore> active_core;
+        {
+            std::lock_guard lock(mutex_);
+            active_core = core_;
+        }
+        return active_core != nullptr && active_core->static_metal_residency_disabled_for_test();
+    }
 #endif
 
     void begin_environment_cleanup(napi_async_cleanup_hook_handle hook) noexcept {
@@ -752,6 +761,13 @@ Napi::Value TestRunPostAutoreleaseSettlementProbe(const Napi::CallbackInfo& info
         return deferred.Promise();
     });
 }
+
+Napi::Value TestStaticMetalResidencyDisabled(const Napi::CallbackInfo& info) {
+    return synchronous_callback(info, [&info] {
+        return Napi::Boolean::New(
+            info.Env(), environment_state(info.Env()).static_metal_residency_disabled_for_test());
+    });
+}
 #endif
 
 Napi::Object Register(Napi::Env env, Napi::Object exports) {
@@ -791,6 +807,8 @@ Napi::Object Register(Napi::Env env, Napi::Object exports) {
                 Napi::Function::New(env, TestReleasePostAutoreleaseSettlementBarrier));
     exports.Set("__testRunPostAutoreleaseSettlementProbe",
                 Napi::Function::New(env, TestRunPostAutoreleaseSettlementProbe));
+    exports.Set("__testStaticMetalResidencyDisabled",
+                Napi::Function::New(env, TestStaticMetalResidencyDisabled));
 #endif
     return exports;
 }

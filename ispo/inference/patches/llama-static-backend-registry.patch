@@ -435,6 +435,9 @@ index a885715bf..e486cef35 100644
 @@ -639 +640 @@ ggml_metal_rsets_t ggml_metal_rsets_init(ggml_metal_device_t dev) {
 -#if defined(GGML_METAL_HAS_RESIDENCY_SETS)
 +#if defined(GGML_METAL_HAS_RESIDENCY_SETS) && !defined(GGML_ISPO_STATIC_ONLY)
+@@ -863 +864 @@ ggml_metal_device_t ggml_metal_device_init(int device) {
+-#if defined(GGML_METAL_HAS_RESIDENCY_SETS)
++#if defined(GGML_METAL_HAS_RESIDENCY_SETS) && !defined(GGML_ISPO_STATIC_ONLY)
 @@ -889,0 +891,3 @@ ggml_metal_device_t ggml_metal_device_init(int device) {
 +#if defined(GGML_ISPO_STATIC_ONLY)
 +            dev->props.max_working_set_size = dev->mtl_device.recommendedMaxWorkingSetSize;

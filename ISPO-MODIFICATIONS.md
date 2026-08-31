@@ -78,7 +78,7 @@ source package:
 
 | Path | ISPO package name | Version | Publication state |
 | --- | --- | --- | --- |
-| `bindings/electron/native` | `@ispo/runanywhere-local-inference-native` | `0.20.31-ispo.8` | private; unadmitted proposal; never publish from Phase 0/1 |
+| `bindings/electron/native` | `@ispo/runanywhere-local-inference-native` | `0.20.31-ispo.9` | private; unadmitted proposal; never publish from Phase 0/1 |
 
 The future host-private runtime artifact is reserved as
 `@ispo/runanywhere-local-inference` with an ISPO prerelease or release version
@@ -594,3 +594,37 @@ The enclosing Darwin static archive is not an identity input: its sole compiled
 member was byte-identical, while its `__.SYMDEF SORTED` and member headers carry
 the archive creation time. This later provenance-only record creates no
 archive, signing result, publication, tag, or admission claim.
+
+## 0.20.31-ispo.9 static Metal residency-set repair proposal
+
+This additive, unadmitted `.9` proposal descends from the `.8` post-
+autorelease-settlement proposal without rewriting it. The sealed static-only
+build had already compiled out the residency-set worker body and dummy work,
+but Metal device initialization still selected residency sets on eligible Apple
+GPUs. That selection allocated the residency collection, its Objective-C
+objects, and a dispatch group with a global-queue task whose lifetime belongs
+to the global Metal device rather than to a demand context. `llama_synchronize()`
+correctly settles a demand context's command buffers, but cannot join that
+device-owned task.
+
+The `.9` static-only patch prevents Metal device initialization from selecting
+residency sets. It therefore never enters `ggml_metal_rsets_init()` in this
+sealed build and retains no residency collection or background dispatch group
+after initialization. It preserves the compiled Metal backend, the existing
+per-demand `llama_synchronize()` and post-autorelease acknowledgement order,
+one-core-`next()` pull semantics, cancellation, lifecycle ordering, and the
+closed production export surface.
+
+`ISPO_INFERENCE_TESTING` now adds a test-only query of the initialized Metal
+device property. On an eligible host it requires a positive Metal probe and
+proves static initialization leaves residency sets disabled; it loads no model
+and performs no prompt, decode, or token work. The release build leaves this
+query and every test export disabled, while package assembly records the test
+source in the signed input manifest and continues to verify the exact
+production exports.
+
+No `.9` admission matrix, archive, explicit signing, tag, policy update,
+catalog admission, publication, merge, or independent review is claimed by
+this source proposal. The authorized five-by-six matrices remain unconsumed
+and may run only once each after independent raw-linker reproduction of the
+exact `.9` head.
