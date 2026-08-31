@@ -14,6 +14,22 @@ const maximumOutputBytes = 8192;
 const maximumStalledRssGrowthBytes = 256 * 1024;
 const maximumSteadyRssPlateauBytes = 8 * 1024 * 1024;
 const allowedBackends = new Set(['metal', 'cpu-accelerate']);
+const qwen3ModelIdentity = Object.freeze({
+  bytes: 2497280256,
+  sha256: '7485fe6f11af29433bc51cab58009521f205840f5b4ae3a32fa7f92e8534fdf5',
+});
+const qwen3LicenseIdentity = Object.freeze({
+  sha256: '5de36594c10839788a8c589443a8ef9d8b8d17c65a1b5807206ae037fc36c6bd',
+});
+const rawLinkerIdentityContract = Object.freeze({
+  artifactPath: 'native/ispo_local_inference_native.node',
+  signatureState: 'linker-generated-ad-hoc',
+  stage: 'raw-linker-output-before-explicit-codesign',
+});
+const sha256Pattern = /^[0-9a-f]{64}$/;
+const sourceHeadPattern = /^[0-9a-f]{40}$/;
+const sourceRepository = path.resolve(__dirname, '../../..');
+const subprocessEnvironment = Object.freeze({ PATH: '/usr/bin:/bin:/usr/sbin:/sbin' });
 
 class Qwen3MatrixError extends Error {
   constructor(stage) {
@@ -49,6 +65,158 @@ const objectValue = (value, label) => {
 };
 
 const digest = (value) => createHash('sha256').update(value, 'utf8').digest('hex');
+
+const exactRecord = (value, keys, label) => {
+  assert(value instanceof Object && !Array.isArray(value),
+    `${label} was not a record`);
+  assert(JSON.stringify(Object.keys(value).sort()) === JSON.stringify([...keys].sort()),
+    `${label} had an unexpected shape`);
+  return value;
+};
+
+const boundedFileIdentity = (value, label) => {
+  const record = exactRecord(value, ['bytes', 'sha256'], label);
+  assert(Number.isSafeInteger(record.bytes) && record.bytes >= 0,
+    `${label} byte count was invalid`);
+  assert(sha256Pattern.test(record.sha256), `${label} hash was invalid`);
+  return { bytes: record.bytes, sha256: record.sha256 };
+};
+
+const parseRawLinkerIdentity = (value) => {
+  const record = exactRecord(value, [
+    'artifactPath',
+    'forkHead',
+    'schemaVersion',
+    'sha256',
+    'signatureState',
+    'stage',
+  ], 'raw linker identity');
+  assert(record.schemaVersion === 1, 'raw linker identity schema was invalid');
+  assert(record.artifactPath === rawLinkerIdentityContract.artifactPath,
+    'raw linker identity artifact was invalid');
+  assert(record.stage === rawLinkerIdentityContract.stage,
+    'raw linker identity stage was invalid');
+  assert(record.signatureState === rawLinkerIdentityContract.signatureState,
+    'raw linker identity signature state was invalid');
+  assert(sourceHeadPattern.test(record.forkHead), 'raw linker identity source head was invalid');
+  assert(sha256Pattern.test(record.sha256), 'raw linker identity hash was invalid');
+  return {
+    forkHead: record.forkHead,
+    sha256: record.sha256,
+    signatureState: record.signatureState,
+    stage: record.stage,
+  };
+};
+
+const readRawLinkerIdentity = async (filename) => {
+  let value;
+  try {
+    value = JSON.parse(await fs.promises.readFile(filename, 'utf8'));
+  } catch {
+    throw new Error('raw linker identity could not be read');
+  }
+  return parseRawLinkerIdentity(value);
+};
+
+const streamFileIdentity = async (filename, label) => {
+  const metadata = await fs.promises.lstat(filename);
+  assert(metadata.isFile() && !metadata.isSymbolicLink(), `${label} was not a regular file`);
+  const hash = createHash('sha256');
+  let bytes = 0;
+  for await (const chunk of fs.createReadStream(filename, { highWaterMark: 64 * 1024 })) {
+    bytes += chunk.byteLength;
+    hash.update(chunk);
+  }
+  return { bytes, sha256: hash.digest('hex') };
+};
+
+const readSourceHead = () => {
+  const result = spawnSync('/usr/bin/git', ['-C', sourceRepository, 'rev-parse', 'HEAD'], {
+    encoding: 'utf8',
+    env: subprocessEnvironment,
+    stdio: ['ignore', 'pipe', 'ignore'],
+  });
+  assert(result.error === undefined && result.status === 0, 'source head could not be read');
+  const sourceHead = stringValue(result.stdout.trim(), 'source head');
+  assert(sourceHeadPattern.test(sourceHead), 'source head was invalid');
+  return sourceHead;
+};
+
+const assertExactIdentity = (actual, expected, label) => {
+  assert(actual.sha256 === expected.sha256, `${label} hash identity mismatch`);
+  if (expected.bytes !== undefined) {
+    assert(actual.bytes === expected.bytes, `${label} byte-count identity mismatch`);
+  }
+};
+
+const validateExactInputBindings = (candidate, expected = {
+  license: qwen3LicenseIdentity,
+  model: qwen3ModelIdentity,
+}) => {
+  const declaredSourceHead = stringValue(candidate.declaredSourceHead, 'declared source head');
+  const repositoryHead = stringValue(candidate.repositoryHead, 'repository source head');
+  assert(sourceHeadPattern.test(declaredSourceHead), 'declared source head was invalid');
+  assert(sourceHeadPattern.test(repositoryHead), 'repository source head was invalid');
+  assert(declaredSourceHead === repositoryHead, 'matrix source head did not match the repository');
+
+  const rawLinker = parseRawLinkerIdentity(candidate.rawLinker);
+  const productionAddon = boundedFileIdentity(candidate.productionAddon, 'production addon');
+  const rawAddon = boundedFileIdentity(candidate.rawAddon, 'raw addon');
+  const testAddon = boundedFileIdentity(candidate.testAddon, 'test addon');
+  const model = boundedFileIdentity(candidate.model, 'Qwen3 GGUF');
+  const license = boundedFileIdentity(candidate.license, 'Qwen3 license');
+  assert(rawLinker.forkHead === repositoryHead,
+    'raw linker identity source head did not match the repository');
+  assert(rawLinker.sha256 === rawAddon.sha256,
+    'raw linker identity did not match the raw addon');
+  assertExactIdentity(model, expected.model, 'Qwen3 GGUF');
+  assertExactIdentity(license, expected.license, 'Qwen3 license');
+
+  return {
+    source: { head: repositoryHead },
+    rawLinker: {
+      sha256: rawLinker.sha256,
+      signatureState: rawLinker.signatureState,
+      stage: rawLinker.stage,
+    },
+    nativeArtifacts: {
+      productionAddon,
+      rawAddon,
+      testAddon,
+    },
+    model,
+    license,
+  };
+};
+
+const captureExactInputBindings = async ({
+  addonPath,
+  licensePath,
+  modelPath,
+  rawAddonPath,
+  rawLinkerIdentityPath,
+  sourceHead,
+  testAddonPath,
+}) => {
+  const [productionAddon, testAddon, model, license, rawAddon, rawLinker] = await Promise.all([
+    streamFileIdentity(addonPath, 'production addon'),
+    streamFileIdentity(testAddonPath, 'test addon'),
+    streamFileIdentity(modelPath, 'Qwen3 GGUF'),
+    streamFileIdentity(licensePath, 'Qwen3 license'),
+    streamFileIdentity(rawAddonPath, 'raw addon'),
+    readRawLinkerIdentity(rawLinkerIdentityPath),
+  ]);
+  return validateExactInputBindings({
+    declaredSourceHead: sourceHead,
+    license,
+    model,
+    productionAddon,
+    rawAddon,
+    rawLinker,
+    repositoryHead: readSourceHead(),
+    testAddon,
+  });
+};
 
 const elapsed = (operation) => {
   const startedAt = Date.now();
@@ -299,19 +467,46 @@ const prompt = ${JSON.stringify(qwen3Prompt)};
 };
 
 const parseArguments = (argumentsList) => {
-  if (argumentsList.length !== 4) throw new Error('Qwen3 matrix arguments are invalid');
-  const [addonPath, testAddonPath, modelPath, outputPath] = argumentsList;
-  for (const candidate of [addonPath, testAddonPath, modelPath, outputPath]) {
+  if (argumentsList.length !== 8) throw new Error('Qwen3 matrix arguments are invalid');
+  const [
+    addonPath,
+    testAddonPath,
+    modelPath,
+    licensePath,
+    rawAddonPath,
+    rawLinkerIdentityPath,
+    sourceHead,
+    outputPath,
+  ] = argumentsList;
+  for (const candidate of [
+    addonPath,
+    testAddonPath,
+    modelPath,
+    licensePath,
+    rawAddonPath,
+    rawLinkerIdentityPath,
+    outputPath,
+  ]) {
     if (!path.isAbsolute(candidate)) throw new Error('Qwen3 matrix arguments are invalid');
   }
-  return { addonPath, testAddonPath, modelPath, outputPath };
+  if (!sourceHeadPattern.test(sourceHead)) throw new Error('Qwen3 matrix arguments are invalid');
+  return {
+    addonPath,
+    licensePath,
+    modelPath,
+    outputPath,
+    rawAddonPath,
+    rawLinkerIdentityPath,
+    sourceHead,
+    testAddonPath,
+  };
 };
 
 const writeReport = (outputPath, report) => {
   fs.writeFileSync(outputPath, `${JSON.stringify(report, null, 2)}\n`, 'utf8');
 };
 
-const runQwen3AdmissionMatrix = async ({ addonPath, testAddonPath, modelPath }) => {
+const runQwen3AdmissionMatrix = async ({ addonPath, inputBindings, testAddonPath, modelPath }) => {
   const native = require(addonPath);
   const testNative = require(testAddonPath);
   try {
@@ -391,8 +586,9 @@ const runQwen3AdmissionMatrix = async ({ addonPath, testAddonPath, modelPath }) 
     const offline = await runStage('offline-stream', () => runOfflineStreamCheck(addonPath, modelPath));
 
     return {
-      schemaVersion: 1,
+      schemaVersion: 2,
       status: 'passed',
+      inputBindings,
       template: {
         kind: 'qwen3-chatml-single-user',
         contextTokens: qwen3ContextTokens,
@@ -451,12 +647,13 @@ const main = async () => {
   try {
     const options = parseArguments(process.argv.slice(2));
     outputPath = options.outputPath;
-    const report = await runQwen3AdmissionMatrix(options);
+    const inputBindings = await runStage('input-bindings', () => captureExactInputBindings(options));
+    const report = await runQwen3AdmissionMatrix({ ...options, inputBindings });
     writeReport(outputPath, report);
   } catch (error) {
     if (outputPath) {
       const failureStage = error instanceof Qwen3MatrixError ? error.stage : 'internal';
-      writeReport(outputPath, { schemaVersion: 1, status: 'failed', failureStage });
+      writeReport(outputPath, { schemaVersion: 2, status: 'failed', failureStage });
     }
     process.stderr.write('Qwen3 admission matrix failed\n');
     process.exitCode = 1;
@@ -470,7 +667,11 @@ if (require.main === module) {
 module.exports = {
   expectedQwen3ChatPrompt,
   matrixCycles,
+  parseRawLinkerIdentity,
   qwen3ContextTokens,
+  qwen3LicenseIdentity,
+  qwen3ModelIdentity,
   qwen3Prompt,
   runQwen3AdmissionMatrix,
+  validateExactInputBindings,
 };

@@ -710,6 +710,18 @@ category, and completion byte count; it records no model location, source
 identity, credential, or backend handle. Its model-free contract test rejects
 template changes and verifies cleanup on failure.
 
+Before the final Qwen3 matrix loads either addon, its receipt stream-hashes
+the production, raw, and test addons, the exact canonical GGUF, and the exact
+Apache-2.0 license text. It separately records the supplied source head and
+requires that head to agree with both the checked-out source and the
+linker-generated raw-addon identity. The receipt retains only those bounded
+hashes and byte counts; it contains no paths, model URLs, repository metadata,
+or native handles. The package producer carries the same source head in the
+raw-linker identity, input manifest, and SBOM property so a later signed
+candidate cannot relabel a raw result from another source head. Model-free
+matrix tests reject each source, raw-linker, model, license, and artifact
+identity mismatch before any native load.
+
 The `.10` package inputs now name the new immutable source and helper tests;
 the SBOM's llama.cpp component follows the same archive receipt and the notice
 bundle retains the selected MIT text. The former Llama-only smoke-fixture

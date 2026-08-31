@@ -74,13 +74,19 @@ if ! [[ "$canonical_pre_explicit_sign_sha256" =~ ^[0-9a-f]{64}$ ]]; then
     echo "raw linker output did not produce a SHA-256 identity" >&2
     exit 65
 fi
-node - "$canonical_pre_explicit_sign_sha256" "$canonical_pre_explicit_sign_stage" <<'NODE' > "$canonical_pre_explicit_sign_identity"
+readonly canonical_pre_explicit_sign_fork_head="$(git -C "$repo_root" rev-parse HEAD)"
+if ! [[ "$canonical_pre_explicit_sign_fork_head" =~ ^[0-9a-f]{40}$ ]]; then
+    echo "raw linker output did not retain a source identity" >&2
+    exit 65
+fi
+node - "$canonical_pre_explicit_sign_sha256" "$canonical_pre_explicit_sign_stage" "$canonical_pre_explicit_sign_fork_head" <<'NODE' > "$canonical_pre_explicit_sign_identity"
 'use strict';
 
-const [sha256, stage] = process.argv.slice(2);
+const [sha256, stage, forkHead] = process.argv.slice(2);
 process.stdout.write(`${JSON.stringify({
   schemaVersion: 1,
   artifactPath: 'native/ispo_local_inference_native.node',
+  forkHead,
   stage,
   signatureState: 'linker-generated-ad-hoc',
   sha256,
@@ -137,11 +143,16 @@ const canonicalPreExplicitSignIdentity = JSON.parse(fs.readFileSync(canonicalIde
 if (
   canonicalPreExplicitSignIdentity.schemaVersion !== 1 ||
   canonicalPreExplicitSignIdentity.artifactPath !== 'native/ispo_local_inference_native.node' ||
+  !/^[0-9a-f]{40}$/.test(canonicalPreExplicitSignIdentity.forkHead) ||
   canonicalPreExplicitSignIdentity.stage !== 'raw-linker-output-before-explicit-codesign' ||
   canonicalPreExplicitSignIdentity.signatureState !== 'linker-generated-ad-hoc' ||
   !/^[0-9a-f]{64}$/.test(canonicalPreExplicitSignIdentity.sha256)
 ) {
   throw new Error('canonical pre-explicit-sign identity is malformed');
+}
+const forkHead = output('git', ['-C', repositoryRoot, 'rev-parse', 'HEAD']);
+if (canonicalPreExplicitSignIdentity.forkHead !== forkHead) {
+  throw new Error('canonical pre-explicit-sign identity source does not match package source');
 }
 const sourceFile = (relativePath) => {
   const filename = path.join(repositoryRoot, relativePath);
@@ -237,7 +248,7 @@ const inputManifest = {
   schemaVersion: 1,
   artifact: '@ispo/runanywhere-local-inference',
   version: artifactVersion,
-  forkHead: output('git', ['-C', repositoryRoot, 'rev-parse', 'HEAD']),
+  forkHead,
   phase11Base: '70877eb0a3281ae5f5ddad0fa48d60e749746083',
   reviewedBase: '04273588a9c03088bf0e5438b0a0cc7f9d9aa6df',
   adoptedUpstream: '00e879fa818111054c02c8ad1f1a0398a4738f92',
@@ -301,6 +312,7 @@ const sbom = {
       properties: [
         { name: 'org.ispo.artifact.architecture', value: 'darwin-arm64' },
         { name: 'org.ispo.artifact.pre-explicit-sign.stage', value: canonicalPreExplicitSignIdentity.stage },
+        { name: 'org.ispo.artifact.pre-explicit-sign.fork-head', value: canonicalPreExplicitSignIdentity.forkHead },
         { name: 'org.ispo.artifact.pre-explicit-sign.sha256', value: canonicalPreExplicitSignIdentity.sha256 },
         { name: 'org.ispo.artifact.pre-explicit-sign.signature-state', value: canonicalPreExplicitSignIdentity.signatureState },
       ],
