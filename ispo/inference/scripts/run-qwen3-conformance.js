@@ -117,7 +117,7 @@ const main = () => {
       modelPath: options.modelPath,
     });
     writeReport(outputPath, report);
-  } catch {
+  } catch (error) {
     if (outputPath) {
       const failureStage = error instanceof Qwen3ConformanceError ? error.stage : 'internal';
       writeReport(outputPath, { schemaVersion: 1, status: 'failed', failureStage });

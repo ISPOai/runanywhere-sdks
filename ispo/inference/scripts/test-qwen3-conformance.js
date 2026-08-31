@@ -1,5 +1,10 @@
 'use strict';
 
+const { spawnSync } = require('node:child_process');
+const fs = require('node:fs');
+const os = require('node:os');
+const path = require('node:path');
+
 const {
   expectedQwen3ChatPrompt,
   qwen3ContextTokens,
@@ -94,5 +99,28 @@ assert(malformedTemplateFailureStage === 'template-render',
   'malformed Qwen3 template did not retain its bounded failure stage');
 assert(JSON.stringify(malformedTemplateNative.calls.slice(-2)) === JSON.stringify(['unload', 'shutdown']),
   'template failure did not release the test addon');
+
+const failureReceiptDirectory = fs.mkdtempSync(path.join(os.tmpdir(), 'ispo-qwen3-conformance-'));
+try {
+  const failureReceipt = path.join(failureReceiptDirectory, 'failure.json');
+  const failureRun = spawnSync(process.execPath, [
+    path.join(__dirname, 'run-qwen3-conformance.js'),
+    path.join(failureReceiptDirectory, 'missing-addon.node'),
+    path.join(failureReceiptDirectory, 'missing-test-addon.node'),
+    path.join(failureReceiptDirectory, 'missing-model.gguf'),
+    failureReceipt,
+  ], { encoding: 'utf8' });
+  assert(failureRun.status === 1, 'CLI failure did not retain its exit status');
+  assert(failureRun.stdout === '', 'CLI failure wrote unbounded stdout');
+  assert(failureRun.stderr === 'Qwen3 conformance failed\n', 'CLI failure output changed');
+  const failureReport = JSON.parse(fs.readFileSync(failureReceipt, 'utf8'));
+  assert(JSON.stringify(failureReport) === JSON.stringify({
+    schemaVersion: 1,
+    status: 'failed',
+    failureStage: 'internal',
+  }), 'CLI failure did not retain the bounded receipt');
+} finally {
+  fs.rmSync(failureReceiptDirectory, { recursive: true, force: true });
+}
 
 process.stdout.write('Qwen3 conformance contract passed\n');
