@@ -58,10 +58,11 @@ and runtime sealing are explicitly Phase 1 work.
 | `3205279cb974c33dc66cb226f8387ce3f34823a4` | Corrects the resolved Abseil tag and records the first clean public build evidence. | Closure PR review scope: dependency revision and fresh public configure/build evidence; independent review is required before merge. | Awaiting independent PR review |
 | `106d680a217895d4a3d83b21ffe0735dda69bbb0` | Records the final Phase 0 clean-build result without changing runtime source, CMake inputs, or package-lock contents. | Closure PR review scope: build transcript, output hash, source-graph, and no-credential evidence; independent review is required before merge. | Awaiting independent PR review |
 | `899364dc62d1881d2c9a9303e7c440589b8b58a1` | Repairs the verified Phase 1 portability, cache pinning, signing-default, notices/SBOM, command recipe, and event-loop cancellation findings. It pins the public llama.cpp commit archive by SHA-256, adds the fork-owned static-registry patch/audit gate, enforces macOS 14.5 and portable ARM64 compilation, and moves ad-hoc packaging behind an explicitly named development command. | Clean archive-pinned configure/build; independent timer cancellation smoke; release-identity absence gate; final packaged-binary audit remains a required independent-review gate. | Awaiting independent PR review |
-| `2cd6033f41264d99f0ac0f8c560569215e5e3385` | Seals the Phase 1 inference-only preset, direct core + llama.cpp + narrow N-API adapter, static backend/source reduction patch, explicit licensed fixture helper, strict artifact audit, reproducible metadata, and fail-closed signing seam. The inherited commons, Electron facade, desktop adapter, server, downloads, telemetry, Connect, and private engines are not configured on this path. | Two clean public checkout roots built byte-identical unsigned addons; strict graph audit, licensed-fixture smoke, positive Metal, forced/injected CPU fallback, deterministic development archive, and official timestamped signing evidence are recorded below. | Awaiting independent exact-head Sol review |
+| `2cd6033f41264d99f0ac0f8c560569215e5e3385` | Seals the Phase 1 inference-only preset, direct core + llama.cpp + narrow N-API adapter, static backend/source reduction patch, explicit licensed fixture helper, strict artifact audit, reproducible metadata, and fail-closed signing seam. The inherited commons, Electron facade, desktop adapter, server, downloads, telemetry, Connect, and private engines are not configured on this path. | Two clean public checkout roots built byte-identical raw linker outputs with their linker-generated ad-hoc code signatures intact; strict graph audit, licensed-fixture smoke, positive Metal, forced/injected CPU fallback, deterministic development archive, and official timestamped signing evidence are recorded below. | Awaiting independent exact-head Sol review |
 | `bb81e449cc02f7c52f6e39428a1bc58bc7e701a7` | Replaces namespace-global inference ownership with Node-API environment instance data, an asynchronous environment cleanup hook, and an idempotent finalizer. Cleanup cancels and drains stream work before model unload, backend shutdown, and `InferenceCore` destruction. Adds child-process ordinary-return coverage and preserves the documented versioned directory at the root of every ZIP. | Reproduced the prior exit-134 failure, then verified initialize, load/generate, controlled-error, explicit-shutdown, and in-flight stream cleanup exits without `SIGABRT` or `std::system_error`; strict artifact audit and official signed candidate provenance are recorded below. | Awaiting independent exact-head Sol review |
-| `1fe2f8f119d9bd3d457029d6f8d92cc560798706` | Introduces the Phase 1.1 internal pull stream: each host `next()` asynchronously yields no more than one bounded delta or one terminal record; cancellation, duplicate demand, abandonment, unload/reset/shutdown, and environment exit settle safely. It fixes the decode memory-slot failure by clearing the KV cache, assigning explicit positions, and stopping at the remaining context budget. It also fixes an ordinary-exit `SIGSEGV`: the cleanup hook now drains and removes its Node-API handle on the Node cleanup thread instead of a detached native thread. | Fresh public roots produced byte-identical unsigned ARM64 addons; artifact audit, signed package, manifest/SBOM/notices verification, a 100-process initialize/ordinary-exit stress check, and five consecutive six-cycle CPU diagnostics passed. This host has no usable Metal device, so positive Metal and injected-Metal-failure fallback remain required on an eligible host. | Awaiting independent exact-head Sol review |
-| `f7f3b58706e01f403078b852d8d607bcc0a6be3b` | Repairs the Phase 1.2 Metal lifecycle RSS regression without changing the sealed N-API surface. Pull demand moves from arbitrary libuv workers to one environment-owned native executor, and each Metal demand has an explicit Objective-C autorelease scope. Cleanup still cancels and drains every lease before joining that executor and releasing model/context/KV/sampler resources. It records version `0.20.31-ispo.4` and adds both new native sources to the signed input manifest. | The eligible Apple M2 Pro lane first measured 14,204,928 bytes post-warmup without the autorelease scope; the scoped focused six-cycle smoke measured 1,245,184 bytes. The required unchanged five-fresh-process/six-cycle command then passed once, including Metal, forced CPU/Accelerate, injected Metal-load fallback, pull/backpressure, lifecycle, GC, and exit assertions. Fresh public roots produced byte-identical unsigned addons; exact signed-candidate hashes are recorded below. | Awaiting independent exact-head Sol review |
+| `1fe2f8f119d9bd3d457029d6f8d92cc560798706` | Introduces the Phase 1.1 internal pull stream: each host `next()` asynchronously yields no more than one bounded delta or one terminal record; cancellation, duplicate demand, abandonment, unload/reset/shutdown, and environment exit settle safely. It fixes the decode memory-slot failure by clearing the KV cache, assigning explicit positions, and stopping at the remaining context budget. It also fixes an ordinary-exit `SIGSEGV`: the cleanup hook now drains and removes its Node-API handle on the Node cleanup thread instead of a detached native thread. | Fresh public roots produced byte-identical raw linker ARM64 outputs with linker-generated ad-hoc code signatures; artifact audit, signed package, manifest/SBOM/notices verification, a 100-process initialize/ordinary-exit stress check, and five consecutive six-cycle CPU diagnostics passed. This host has no usable Metal device, so positive Metal and injected-Metal-failure fallback remain required on an eligible host. | Awaiting independent exact-head Sol review |
+| `f7f3b58706e01f403078b852d8d607bcc0a6be3b` | Repairs the Phase 1.2 Metal lifecycle RSS regression without changing the sealed N-API surface. Pull demand moves from arbitrary libuv workers to one environment-owned native executor, and each Metal demand has an explicit Objective-C autorelease scope. Cleanup still cancels and drains every lease before joining that executor and releasing model/context/KV/sampler resources. It records version `0.20.31-ispo.4` and adds both new native sources to the signed input manifest. | The eligible Apple M2 Pro lane first measured 14,204,928 bytes post-warmup without the autorelease scope; the scoped focused six-cycle smoke measured 1,245,184 bytes. The required unchanged five-fresh-process/six-cycle command then passed once, including Metal, forced CPU/Accelerate, injected Metal-load fallback, pull/backpressure, lifecycle, GC, and exit assertions. Fresh public roots produced byte-identical raw linker outputs with linker-generated ad-hoc code signatures; exact signed-candidate hashes are recorded below. | Awaiting independent exact-head Sol review |
+| `a63498489e185c1c765e252e8a2f7519c886479b` | Advances the private source/package identity to `0.20.31-ispo.6` and captures one typed raw-linker identity before any explicit code-sign mutation. The package input manifest, CycloneDX SBOM, staged metadata, and non-circular artifact manifest bind that one stage. | Two fresh public roots must agree on the raw linker identity; the package path rejects a missing or altered automatic linker signature rather than stripping or normalizing it. No `.6` package, tag, publication, or policy update is created by this source change. | Awaiting independent exact-head Sol review |
 
 No upstream source logic has been modified in Phase 0. The additive
 [closure PR #1](https://github.com/ISPOai/runanywhere-sdks/pull/1) contains
@@ -77,7 +78,7 @@ source package:
 
 | Path | ISPO package name | Version | Publication state |
 | --- | --- | --- | --- |
-| `bindings/electron/native` | `@ispo/runanywhere-local-inference-native` | `0.20.31-ispo.4` | private; never publish from Phase 0/1 |
+| `bindings/electron/native` | `@ispo/runanywhere-local-inference-native` | `0.20.31-ispo.6` | private; unadmitted proposal; never publish from Phase 0/1 |
 
 The future host-private runtime artifact is reserved as
 `@ispo/runanywhere-local-inference` with an ISPO prerelease or release version
@@ -201,7 +202,7 @@ download/HF-cache/cloud paths described above.
 
 The Phase 1.2 package layout is `ispo-local-inference-darwin-arm64-0.20.31-ispo.4/`: one native addon in `native/`, embedded Metal shaders inside that Mach-O, no third-party dylibs, notices in `notices/`, and input/SBOM/hash records in `metadata/`. The ZIP preserves that versioned directory as its top-level entry; extraction never spills `native/`, `notices/`, or `metadata/` into a desktop-signing parent. It is an input suitable for later nested desktop signing; this script signs only the native addon and never publishes a package or release.
 
-`metadata/artifact-manifest.sha256` hashes every staged file except itself. The `.zip.sha256` is adjacent to, not inside, the archive, so the archive hash is non-circular. Secure timestamping makes an official Developer ID archive time-bearing; byte-identical reproducibility is instead proven on the unsigned addon and separately named ad-hoc development archive, while the official archive has deterministic layout and a strict signature gate.
+`metadata/artifact-manifest.sha256` hashes every staged file except itself. The `.zip.sha256` is adjacent to, not inside, the archive, so the archive hash is non-circular. Secure timestamping makes an official Developer ID archive time-bearing; byte-identical reproducibility is instead proven on the raw linker output before explicit code signing and separately named ad-hoc development archive, while the official archive has deterministic layout and a strict signature gate.
 
 ### Exact Phase 1 candidate provenance
 
@@ -284,7 +285,7 @@ published, merged, or released.
 
 | Candidate file / evidence | SHA-256 / exact result |
 | --- | --- |
-| Two fresh-root unsigned addons | byte-identical: `1eab6fd6a5b5530fa2bcca1b0a01ed92fbd8bccf55e94bb15af122a99e9b63e4` |
+| Two fresh-root raw linker outputs | byte-identical: `1eab6fd6a5b5530fa2bcca1b0a01ed92fbd8bccf55e94bb15af122a99e9b63e4` |
 | Official archive | `ae0b0308e3127710252ac9cd1e86f10aa71f29d960a1f7f95e398c672beecfcc` |
 | Adjacent archive SHA-256 sidecar file | `807303edf4d5640c23ab87827cf1b8090f941cca386eddfa8367f074978329a8`; its sole archive value is `ae0b0308e3127710252ac9cd1e86f10aa71f29d960a1f7f95e398c672beecfcc` |
 | Signed native addon | `696f935bc410b5e9f1e463237bddc74bd5c1b0c9ca86256cd1eaf46a9b0d443c` |
@@ -344,7 +345,7 @@ host because its Metal device probe returned null.
 
 ## Phase 1 artifact recipe and gate
 
-The artifact identity is `@ispo/runanywhere-local-inference@0.20.31-ispo.4`. It is a host-internal N-API module, not an Electron preload/renderer/global surface. Its only exports are `initialize`, `capabilities`, `loadExactLocalModel`, `complete`, `stream`, `cancel`, `unload`, `metrics`, `reset`, and `shutdown`.
+The retained Phase 1.2 artifact identity is `@ispo/runanywhere-local-inference@0.20.31-ispo.4`. It is a host-internal N-API module, not an Electron preload/renderer/global surface. Its only exports are `initialize`, `capabilities`, `loadExactLocalModel`, `complete`, `stream`, `cancel`, `unload`, `metrics`, `reset`, and `shutdown`.
 
 `stream(prompt, { maxTokens })` creates an opaque native pull-stream identity.
 It has one method, `next()`, whose Promise resolves to exactly one closed result:
@@ -392,7 +393,7 @@ The test-only fixture is `tinyllama-15M-stories-Q2_K.gguf`, source revision `227
 
 The package validates generated CycloneDX 1.5 SBOMs with the official schema tag `1.5`, commit `c320fc0f0b46873864927d9d5684eea7ba439728`: BOM SHA-256 `067f7824b08653839ea050ae9e09ca48375eadc2652b0e2a299476e7db90335b`, SPDX companion SHA-256 `4f6e2b05c05d26a4f2dc5879fbc2fca94b0a28db46289d0c51345621b71cfbfc`, and JSON-signature companion SHA-256 `8bae002c25e723db7ee1f26afde680ae1a2b1a8f6b4b4b0fd65dc3becb090aae`. Schema/test dependencies, every compiled/runtime/test input, and license hashes are recorded in `metadata/input-manifest.json`. CycloneDX components use supported `hashes` and `properties`, never npm-only `integrity`.
 
-From a clean public checkout, run the following in two independent scratch roots and compare the unsigned addon hashes:
+For the retained Phase 1.2 evidence, run the following in two independent scratch roots and compare the raw linker-output hashes:
 
 ```sh
 public_remote="https://github.com/ISPOai/runanywhere-sdks.git"
@@ -452,3 +453,53 @@ ISPO_CODESIGN_IDENTITY='Developer ID Application: ISPO Labs, Inc (4L8CX8AY6M)' \
 ```
 
 The archive contains the addon, notices, model-license record, CycloneDX SBOM, SBOM-validation record, pinned input manifest, and non-circular artifact manifest. Do not merge until an independent exact-head review records the final refs and repeats these gates.
+
+## 0.20.31-ispo.6 canonical pre-explicit-sign proposal
+
+This is an additive, unadmitted source/provenance proposal based exactly on
+reviewed public `ispo/main` commit
+`04273588a9c03088bf0e5438b0a0cc7f9d9aa6df`. It does not merge, rebase, or
+otherwise incorporate unadmitted PR #5 (`0417a33bf59657ccae62226167bb95d9655dce16`).
+The retained `.4` archive, policy, and historical hashes above remain unchanged.
+
+The one canonical pre-explicit-sign identity is the SHA-256 of
+`native/ispo_local_inference_native.node` immediately after the selected CMake
+link step and before either `codesign --force --sign -` or Developer ID
+`codesign --force --sign <identity> --timestamp --options runtime` can mutate
+it. It is deliberately **not** called unsigned: Darwin's linker has already
+emitted an embedded `LC_CODE_SIGNATURE` with
+`flags=0x20002(adhoc,linker-signed)`, `Signature=adhoc`, and no TeamIdentifier.
+The package script validates that exact signature state and writes a closed
+identity record before explicit signing; after signing, it stages that record
+as `metadata/canonical-pre-explicit-sign-identity.json` and copies it into
+`metadata/input-manifest.json` and CycloneDX root-component properties. The
+non-circular artifact manifest then hashes that metadata file along with the
+final signed native addon. All license and notice files remain exclusively under
+`notices/`; SBOM and input/provenance records remain under `metadata/`.
+
+The raw linker identity recorded for this reviewed source is
+`1eab6fd6a5b5530fa2bcca1b0a01ed92fbd8bccf55e94bb15af122a99e9b63e4`.
+Two independent public roots built that byte-identical file with the same
+AppleClang 17 / Xcode 26.2 / CMake 4.4.3 / Node 26 toolchain under isolated
+HOME, temporary, npm-cache, and proxy-free inputs. On a disposable copy of
+that raw file, explicit ad-hoc signing changed the hash to
+`76b8df31b345f1f432ba2c562248c259f6181f6830393849c05b920ff76fb1a9`;
+removing that explicit signature produced
+`d797f559216a0beb7f5533acd0889dedcf0bf0aea374bc622f9d8682cf1ce166`.
+Neither transformed copy is the canonical linker identity. A Developer ID test
+copy also changed bytes and gained the hardened-runtime flag, TeamIdentifier,
+and secure timestamp; it was not packaged, tagged, or published.
+
+The distinct PR #5 source produced raw linker output
+`0dea7c3087cbefa66730171378dbb3b57c2ed79011971066ab19586a965f80c2`.
+Its `487311947361df9bede395a68898d821e9f93bfaf1921c47cf432a20d8a07470`
+value was obtained only after an explicit ad-hoc signature was removed from a
+packaged addon. It is therefore a signature-removal derivative, not raw linker
+output, and is intentionally absent from the `.6` identity record.
+
+The unchanged five-fresh-process, six-cycle smoke must run once in an approved
+unsandboxed Metal host lane with isolated HOME, temporary, network, and cache
+inputs. It must not use `ISPO_SMOKE_ALLOW_CPU_ONLY`, a CPU-only override, or a
+retry wrapper. The pinned TinyLlama fixture remains a test-only input outside
+the repository/package and is usable only after its helper verifies the pinned
+MIT model-card and model-file hashes.
