@@ -482,13 +482,21 @@ The raw linker identity recorded for this reviewed source is
 Two independent public roots built that byte-identical file with the same
 AppleClang 17 / Xcode 26.2 / CMake 4.4.3 / Node 26 toolchain under isolated
 HOME, temporary, npm-cache, and proxy-free inputs. On a disposable copy of
-that raw file, explicit ad-hoc signing changed the hash to
-`76b8df31b345f1f432ba2c562248c259f6181f6830393849c05b920ff76fb1a9`;
-removing that explicit signature produced
-`d797f559216a0beb7f5533acd0889dedcf0bf0aea374bc622f9d8682cf1ce166`.
-Neither transformed copy is the canonical linker identity. A Developer ID test
-copy also changed bytes and gained the hardened-runtime flag, TeamIdentifier,
-and secure timestamp; it was not packaged, tagged, or published.
+that raw file, the linker record had `LC_CODE_SIGNATURE` at offset `3492656`,
+size `27440`, and CodeDirectory `v=20400 size=27417
+flags=0x20002(adhoc,linker-signed) hashes=853+0`. Explicit ad-hoc signing
+rewrote it to `LC_CODE_SIGNATURE` size `25120`, CodeDirectory `v=20400
+size=7056 flags=0x2(adhoc) hashes=214+2`, and hash
+`76b8df31b345f1f432ba2c562248c259f6181f6830393849c05b920ff76fb1a9`.
+Removing that explicit signature removed the code-signature load command and
+produced `d797f559216a0beb7f5533acd0889dedcf0bf0aea374bc622f9d8682cf1ce166`.
+Neither transformed copy is the canonical linker identity. A separate
+Developer ID test copy, signed with installed identity
+`E3CD340EA811F8566A79463CAA0D30AD7A47A231`, rewrote the command to size
+`25248`, CodeDirectory `v=20500 size=7032 flags=0x10000(runtime)
+hashes=214+2`, TeamIdentifier `4L8CX8AY6M`, and a secure timestamp; its hash
+was `c5b8a8d1295888edf47631786caac155038400f2637ecdad008cbdb66d0cde09`.
+It was not packaged, tagged, or published.
 
 The distinct PR #5 source produced raw linker output
 `0dea7c3087cbefa66730171378dbb3b57c2ed79011971066ab19586a965f80c2`.
