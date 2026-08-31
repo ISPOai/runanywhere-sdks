@@ -78,7 +78,7 @@ source package:
 
 | Path | ISPO package name | Version | Publication state |
 | --- | --- | --- | --- |
-| `bindings/electron/native` | `@ispo/runanywhere-local-inference-native` | `0.20.31-ispo.7` | private; unadmitted proposal; never publish from Phase 0/1 |
+| `bindings/electron/native` | `@ispo/runanywhere-local-inference-native` | `0.20.31-ispo.8` | private; unadmitted proposal; never publish from Phase 0/1 |
 
 The future host-private runtime artifact is reserved as
 `@ispo/runanywhere-local-inference` with an ISPO prerelease or release version
@@ -538,3 +538,31 @@ pre-explicit-sign identity may be recorded only after two fresh isolated public
 roots reproduce the linker-generated ad-hoc output byte-for-byte. The required
 unsandboxed five-by-six Metal smoke remains a one-time post-repair gate, not a
 retry of `.6`.
+
+## 0.20.31-ispo.8 post-autorelease settlement repair proposal
+
+This additive, unadmitted `.8` proposal descends from the `.7` executor-
+quiescence proposal without rewriting it. A pull demand now calls
+`llama_synchronize()` for an active Metal context while holding the core
+lifecycle lock, then exits its per-demand Objective-C autorelease scope before
+the executor publishes the existing quiescent acknowledgement. The selected
+llama API waits for queued backend computation, so result publication cannot
+race a still-settling Metal command path or a live per-demand autorelease pool.
+CPU/Accelerate keeps its existing path because there is no Metal backend to
+synchronize.
+
+The test-only barrier now sits immediately after the actual autorelease scope,
+before the executor can store the result or acknowledge it to the pending
+`next()` worker. Its model-free probe executes that same scope helper with a
+closed terminal stream, proving a Promise stays pending before the boundary,
+after cancellation/reset, and until explicit release. A second probe proves
+ordinary shutdown releases and drains the boundary before the executor joins.
+The release build still has no test exports; package assembly checks the exact
+sorted production export set and self-tests exact, missing, and extra sets.
+
+No `.8` archive, raw identity, signing, tag, policy update, catalog admission,
+publication, merge, or independent review is claimed by this source change.
+Its canonical raw pre-explicit-sign identity may be recorded only after two
+fresh isolated public roots reproduce the linker-generated output byte-for-byte.
+The required unsandboxed five-by-six Metal smoke remains a one-time post-repair
+gate and is not run by this source proposal.

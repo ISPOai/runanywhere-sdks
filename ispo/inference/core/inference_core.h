@@ -98,6 +98,7 @@ class InferenceCore {
     [[nodiscard]] std::shared_ptr<StreamSession> start_stream(const std::string& prompt,
                                                                 uint32_t max_tokens);
     [[nodiscard]] StreamStep next(const std::shared_ptr<StreamSession>& stream);
+    void synchronize_backend_after_demand();
     void cancel() noexcept;
     void abandon_stream(const std::shared_ptr<StreamSession>& stream) noexcept;
     void unload();

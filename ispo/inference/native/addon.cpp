@@ -157,37 +157,32 @@ class EnvironmentState final {
     void shutdown() noexcept { shutdown_core(false); }
 
 #if defined(ISPO_INFERENCE_TESTING)
-    void arm_generation_executor_barrier_for_test() {
-        std::lock_guard lock(generation_executor_test_mutex_);
-        if (generation_executor_test_barrier_armed_) {
-            throw std::runtime_error("generation executor test barrier is already armed");
-        }
-        generation_executor_test_barrier_armed_ = true;
-        generation_executor_test_barrier_reached_ = false;
-        generation_executor_test_barrier_released_ = false;
-        generation_executor_test_probe_returned_.store(false, std::memory_order_release);
+    void arm_post_autorelease_settlement_barrier_for_test() {
+        ispo::inference::arm_post_autorelease_settlement_barrier_for_test();
+        post_autorelease_settlement_probe_returned_.store(false, std::memory_order_release);
     }
 
-    [[nodiscard]] bool generation_executor_barrier_reached_for_test() const noexcept {
-        std::lock_guard lock(generation_executor_test_mutex_);
-        return generation_executor_test_barrier_reached_;
+    [[nodiscard]] bool post_autorelease_settlement_barrier_reached_for_test() const noexcept {
+        return ispo::inference::post_autorelease_settlement_barrier_reached_for_test();
     }
 
-    [[nodiscard]] bool generation_executor_probe_returned_for_test() const noexcept {
-        return generation_executor_test_probe_returned_.load(std::memory_order_acquire);
+    [[nodiscard]] bool post_autorelease_settlement_probe_returned_for_test() const noexcept {
+        return post_autorelease_settlement_probe_returned_.load(std::memory_order_acquire);
     }
 
-    void release_generation_executor_barrier_for_test() {
-        if (!release_generation_executor_barrier()) {
-            throw std::runtime_error("generation executor test barrier is not armed");
+    void release_post_autorelease_settlement_barrier_for_test() {
+        if (!ispo::inference::release_post_autorelease_settlement_barrier_for_test()) {
+            throw std::runtime_error("post-autorelease settlement barrier is not armed");
         }
     }
 
-    void execute_generation_executor_quiescence_probe_for_test() {
-        auto request = std::make_shared<GenerationRequest>();
-        request->test_only = true;
+    void execute_post_autorelease_settlement_probe_for_test() {
+        auto request = std::make_shared<GenerationRequest>(GenerationRequest{
+            .core = std::make_shared<InferenceCore>(),
+            .stream = std::make_shared<StreamSession>("", 1, 1, ispo::inference::Backend::kCpu),
+        });
         execute_generation_request(request);
-        generation_executor_test_probe_returned_.store(true, std::memory_order_release);
+        post_autorelease_settlement_probe_returned_.store(true, std::memory_order_release);
     }
 #endif
 
@@ -278,9 +273,6 @@ class EnvironmentState final {
         StreamStep result;
         bool complete = false;
         bool executor_quiescent = false;
-#if defined(ISPO_INFERENCE_TESTING)
-        bool test_only = false;
-#endif
     };
 
     void execute_generation_request(const std::shared_ptr<GenerationRequest>& request) {
@@ -317,11 +309,6 @@ class EnvironmentState final {
             lock.unlock();
 
             StreamStep result;
-#if defined(ISPO_INFERENCE_TESTING)
-            if (request->test_only) {
-                result = StreamStep{};
-            } else {
-#endif
             try {
                 result = ispo::inference::execute_next_in_metal_autorelease_scope(
                     *request->core, request->stream);
@@ -329,23 +316,17 @@ class EnvironmentState final {
                 request->stream->request_cancel();
                 result = request->stream->terminal_step();
             }
-#if defined(ISPO_INFERENCE_TESTING)
-            }
-#endif
 
             lock.lock();
             request->result = std::move(result);
             request->complete = true;
             generation_executor_done_.notify_all();
             lock.unlock();
-#if defined(ISPO_INFERENCE_TESTING)
-            pause_after_generation_completion_for_test();
-#endif
             lock.lock();
-            // `wait()` below releases this lock atomically. A pull result is
-            // published only after this acknowledgement, so the caller cannot
-            // observe a completed demand while the executor still carries
-            // post-demand Metal/Objective-C settlement work.
+            // The helper returns only after Metal work has synchronized and its
+            // per-demand Objective-C autorelease scope has drained. `wait()`
+            // below releases this lock atomically, so this acknowledgement is
+            // the final completion-to-client boundary for the demand.
             request->executor_quiescent = true;
             generation_executor_done_.notify_all();
         }
@@ -353,7 +334,7 @@ class EnvironmentState final {
 
     void stop_generation_executor() noexcept {
 #if defined(ISPO_INFERENCE_TESTING)
-        (void)release_generation_executor_barrier();
+        (void)ispo::inference::release_post_autorelease_settlement_barrier_for_test();
 #endif
         std::thread executor;
         {
@@ -386,34 +367,7 @@ class EnvironmentState final {
     std::thread generation_executor_;
     bool generation_executor_stopping_ = false;
 #if defined(ISPO_INFERENCE_TESTING)
-    bool release_generation_executor_barrier() noexcept {
-        std::lock_guard lock(generation_executor_test_mutex_);
-        if (!generation_executor_test_barrier_armed_) {
-            return false;
-        }
-        generation_executor_test_barrier_released_ = true;
-        generation_executor_test_barrier_released_condition_.notify_all();
-        return true;
-    }
-
-    void pause_after_generation_completion_for_test() noexcept {
-        std::unique_lock lock(generation_executor_test_mutex_);
-        if (!generation_executor_test_barrier_armed_) {
-            return;
-        }
-        generation_executor_test_barrier_reached_ = true;
-        generation_executor_test_barrier_released_condition_.wait(lock, [this] {
-            return generation_executor_test_barrier_released_;
-        });
-        generation_executor_test_barrier_armed_ = false;
-    }
-
-    mutable std::mutex generation_executor_test_mutex_;
-    std::condition_variable generation_executor_test_barrier_released_condition_;
-    std::atomic<bool> generation_executor_test_probe_returned_{false};
-    bool generation_executor_test_barrier_armed_ = false;
-    bool generation_executor_test_barrier_reached_ = false;
-    bool generation_executor_test_barrier_released_ = false;
+    std::atomic<bool> post_autorelease_settlement_probe_returned_{false};
 #endif
 };
 
@@ -735,19 +689,19 @@ Napi::Value Shutdown(const Napi::CallbackInfo& info) {
 }
 
 #if defined(ISPO_INFERENCE_TESTING)
-class ExecutorQuiescenceProbeWorker final : public Napi::AsyncWorker {
+class PostAutoreleaseSettlementProbeWorker final : public Napi::AsyncWorker {
   public:
-    ExecutorQuiescenceProbeWorker(Napi::Env env, std::shared_ptr<EnvironmentState> state,
-                                  Napi::Promise::Deferred deferred)
+    PostAutoreleaseSettlementProbeWorker(Napi::Env env, std::shared_ptr<EnvironmentState> state,
+                                         Napi::Promise::Deferred deferred)
         : Napi::AsyncWorker(env), state_(std::move(state)), deferred_(deferred) {}
 
     void Execute() override {
         try {
-            state_->execute_generation_executor_quiescence_probe_for_test();
+            state_->execute_post_autorelease_settlement_probe_for_test();
         } catch (const std::exception& error) {
             SetError(error.what());
         } catch (...) {
-            SetError("generation executor quiescence probe failed");
+            SetError("post-autorelease settlement probe failed");
         }
     }
 
@@ -760,38 +714,38 @@ class ExecutorQuiescenceProbeWorker final : public Napi::AsyncWorker {
     Napi::Promise::Deferred deferred_;
 };
 
-Napi::Value TestArmExecutorQuiescenceBarrier(const Napi::CallbackInfo& info) {
+Napi::Value TestArmPostAutoreleaseSettlementBarrier(const Napi::CallbackInfo& info) {
     return synchronous_callback(info, [&info] {
-        environment_state(info.Env()).arm_generation_executor_barrier_for_test();
+        environment_state(info.Env()).arm_post_autorelease_settlement_barrier_for_test();
         return info.Env().Undefined();
     });
 }
 
-Napi::Value TestExecutorQuiescenceBarrierReached(const Napi::CallbackInfo& info) {
+Napi::Value TestPostAutoreleaseSettlementBarrierReached(const Napi::CallbackInfo& info) {
     return synchronous_callback(info, [&info] {
         return Napi::Boolean::New(
-            info.Env(), environment_state(info.Env()).generation_executor_barrier_reached_for_test());
+            info.Env(), environment_state(info.Env()).post_autorelease_settlement_barrier_reached_for_test());
     });
 }
 
-Napi::Value TestExecutorQuiescenceProbeReturned(const Napi::CallbackInfo& info) {
+Napi::Value TestPostAutoreleaseSettlementProbeReturned(const Napi::CallbackInfo& info) {
     return synchronous_callback(info, [&info] {
         return Napi::Boolean::New(
-            info.Env(), environment_state(info.Env()).generation_executor_probe_returned_for_test());
+            info.Env(), environment_state(info.Env()).post_autorelease_settlement_probe_returned_for_test());
     });
 }
 
-Napi::Value TestReleaseExecutorQuiescenceBarrier(const Napi::CallbackInfo& info) {
+Napi::Value TestReleasePostAutoreleaseSettlementBarrier(const Napi::CallbackInfo& info) {
     return synchronous_callback(info, [&info] {
-        environment_state(info.Env()).release_generation_executor_barrier_for_test();
+        environment_state(info.Env()).release_post_autorelease_settlement_barrier_for_test();
         return info.Env().Undefined();
     });
 }
 
-Napi::Value TestRunExecutorQuiescenceProbe(const Napi::CallbackInfo& info) {
+Napi::Value TestRunPostAutoreleaseSettlementProbe(const Napi::CallbackInfo& info) {
     return synchronous_callback(info, [&info] {
         const Napi::Promise::Deferred deferred = Napi::Promise::Deferred::New(info.Env());
-        auto worker = std::make_unique<ExecutorQuiescenceProbeWorker>(
+        auto worker = std::make_unique<PostAutoreleaseSettlementProbeWorker>(
             info.Env(), environment_state_ptr(info.Env()), deferred);
         worker->Queue();
         (void)worker.release();
@@ -827,16 +781,16 @@ Napi::Object Register(Napi::Env env, Napi::Object exports) {
     exports.Set("reset", Napi::Function::New(env, Reset));
     exports.Set("shutdown", Napi::Function::New(env, Shutdown));
 #if defined(ISPO_INFERENCE_TESTING)
-    exports.Set("__testArmExecutorQuiescenceBarrier",
-                Napi::Function::New(env, TestArmExecutorQuiescenceBarrier));
-    exports.Set("__testExecutorQuiescenceBarrierReached",
-                Napi::Function::New(env, TestExecutorQuiescenceBarrierReached));
-    exports.Set("__testExecutorQuiescenceProbeReturned",
-                Napi::Function::New(env, TestExecutorQuiescenceProbeReturned));
-    exports.Set("__testReleaseExecutorQuiescenceBarrier",
-                Napi::Function::New(env, TestReleaseExecutorQuiescenceBarrier));
-    exports.Set("__testRunExecutorQuiescenceProbe",
-                Napi::Function::New(env, TestRunExecutorQuiescenceProbe));
+    exports.Set("__testArmPostAutoreleaseSettlementBarrier",
+                Napi::Function::New(env, TestArmPostAutoreleaseSettlementBarrier));
+    exports.Set("__testPostAutoreleaseSettlementBarrierReached",
+                Napi::Function::New(env, TestPostAutoreleaseSettlementBarrierReached));
+    exports.Set("__testPostAutoreleaseSettlementProbeReturned",
+                Napi::Function::New(env, TestPostAutoreleaseSettlementProbeReturned));
+    exports.Set("__testReleasePostAutoreleaseSettlementBarrier",
+                Napi::Function::New(env, TestReleasePostAutoreleaseSettlementBarrier));
+    exports.Set("__testRunPostAutoreleaseSettlementProbe",
+                Napi::Function::New(env, TestRunPostAutoreleaseSettlementProbe));
 #endif
     return exports;
 }

@@ -452,6 +452,14 @@ StreamStep InferenceCore::next(const std::shared_ptr<StreamSession>& stream) {
     return step;
 }
 
+void InferenceCore::synchronize_backend_after_demand() {
+    std::lock_guard lock(mutex_);
+    if (context_ == nullptr || backend_ != Backend::kMetal) {
+        return;
+    }
+    llama_synchronize(context_);
+}
+
 std::string InferenceCore::complete(const std::string& prompt, uint32_t max_tokens) {
     const auto stream = start_stream(prompt, max_tokens);
     std::string completed;
