@@ -31,8 +31,11 @@ const qwen3LicenseIdentity = Object.freeze({
   sha256: '5de36594c10839788a8c589443a8ef9d8b8d17c65a1b5807206ae037fc36c6bd',
 });
 const qwen3UpstreamIdentity = Object.freeze({
+  archiveBytes: 21023706,
   archiveSha256: 'd086756e37fda7fff0d671d8106601232258d6f95384d04bf69b126445ad201d',
+  licenseBytes: 1078,
   licenseSha256: 'e562a2ddfaf8280537795ac5ecd34e3012b6582a147ef69ba6a6a5c08c84757d',
+  patchBytes: 22952,
   patchSha256: 'e986b6ed5dbaeb0255c72490595a20102622fda8ca7aaba2cce62b26b88e5097',
   revision: 'd3bd7193ba66c15963fd1c59448f22019a8caf6e',
 });
@@ -40,15 +43,52 @@ const qwen3SourceIdentity = Object.freeze({
   proposalBranch: 'ispo/qwen3-runtime-admission-v0.20.31-ispo.10',
   reviewBase: 'ac9e07f2e346ed18ea616329a13c891fdf881995',
 });
+const qwen3NativeArtifactIdentity = Object.freeze({
+  productionAddon: Object.freeze({
+    bytes: 2045616,
+    sha256: '2310ba638fb459ef9d5836b9416c621b88f6334a2a1b611d1bdc4590b6626f7e',
+  }),
+  testAddon: Object.freeze({
+    bytes: 2065792,
+    sha256: '2b210cdcd6f7934b8f1c5bc94e0d6325bd34fa743b37073088c220516fae0e52',
+  }),
+});
 const rawLinkerIdentityContract = Object.freeze({
   artifactPath: 'native/ispo_local_inference_native.node',
+  producer: Object.freeze({
+    cmakeGenerator: 'Ninja',
+    finalLinkOutputPath: 'ispo/inference/ispo_local_inference_native.node',
+    preset: 'ispo-darwin-arm64-inference-release',
+  }),
   reproducibility: Object.freeze({
     rawMachOUuid: 'content-derived',
-    staticArchiveMetadata: 'canonicalized',
+    staticArchiveMetadata: 'canonicalized-provenance',
   }),
-  schemaVersion: 2,
+  schemaVersion: 3,
   signatureState: 'linker-generated-ad-hoc',
   stage: 'raw-linker-output-before-explicit-codesign',
+});
+const preMatrixReceiptContract = Object.freeze({
+  artifactLabels: Object.freeze([
+    'raw-addon',
+    'core-object',
+    'addon-object',
+    'metal-executor-object',
+    'inference-core-archive',
+    'llama-archive',
+    'ggml-archive',
+    'ggml-base-archive',
+    'ggml-cpu-archive',
+    'ggml-blas-archive',
+    'ggml-metal-archive',
+  ]),
+  inputLabels: Object.freeze([
+    'upstream-archive',
+    'upstream-license',
+    'upstream-patch',
+    'matrix-script',
+  ]),
+  schemaVersion: 3,
 });
 const sha256Pattern = /^[0-9a-f]{64}$/;
 const sourceHeadPattern = /^[0-9a-f]{40}$/;
@@ -137,6 +177,7 @@ const parseRawLinkerIdentity = (value) => {
   const record = exactInputRecord(value, [
     'artifactPath',
     'forkHead',
+    'producer',
     'reproducibility',
     'schemaVersion',
     'sha256',
@@ -147,12 +188,23 @@ const parseRawLinkerIdentity = (value) => {
     'rawMachOUuid',
     'staticArchiveMetadata',
   ], 'raw-linker-identity-invalid');
+  const producer = exactInputRecord(record.producer, [
+    'cmakeGenerator',
+    'finalLinkOutputPath',
+    'preset',
+  ], 'raw-linker-identity-invalid');
   inputAssert(record.schemaVersion === rawLinkerIdentityContract.schemaVersion,
     'raw-linker-identity-invalid');
   inputAssert(record.artifactPath === rawLinkerIdentityContract.artifactPath,
     'raw-linker-identity-invalid');
   inputAssert(record.stage === rawLinkerIdentityContract.stage, 'raw-linker-identity-invalid');
   inputAssert(record.signatureState === rawLinkerIdentityContract.signatureState,
+    'raw-linker-identity-invalid');
+  inputAssert(producer.cmakeGenerator === rawLinkerIdentityContract.producer.cmakeGenerator,
+    'raw-linker-identity-invalid');
+  inputAssert(producer.finalLinkOutputPath === rawLinkerIdentityContract.producer.finalLinkOutputPath,
+    'raw-linker-identity-invalid');
+  inputAssert(producer.preset === rawLinkerIdentityContract.producer.preset,
     'raw-linker-identity-invalid');
   inputAssert(reproducibility.rawMachOUuid === rawLinkerIdentityContract.reproducibility.rawMachOUuid,
     'raw-linker-identity-invalid');
@@ -165,6 +217,11 @@ const parseRawLinkerIdentity = (value) => {
   return {
     artifactPath: record.artifactPath,
     forkHead: record.forkHead,
+    producer: {
+      cmakeGenerator: producer.cmakeGenerator,
+      finalLinkOutputPath: producer.finalLinkOutputPath,
+      preset: producer.preset,
+    },
     reproducibility: {
       rawMachOUuid: reproducibility.rawMachOUuid,
       staticArchiveMetadata: reproducibility.staticArchiveMetadata,
@@ -179,6 +236,8 @@ const parseRawLinkerIdentity = (value) => {
 const readRawLinkerIdentity = async (filename) => {
   let value;
   try {
+    const metadata = await fs.promises.lstat(filename);
+    inputAssert(metadata.isFile() && !metadata.isSymbolicLink(), 'raw-linker-identity-unreadable');
     value = JSON.parse(await fs.promises.readFile(filename, 'utf8'));
   } catch {
     inputFailure('raw-linker-identity-unreadable');
@@ -187,6 +246,29 @@ const readRawLinkerIdentity = async (filename) => {
     return parseRawLinkerIdentity(value);
   } catch {
     inputFailure('raw-linker-identity-invalid');
+  }
+};
+
+const readPreMatrixReceipt = async (filename) => {
+  let bytes;
+  try {
+    const metadata = await fs.promises.lstat(filename);
+    inputAssert(metadata.isFile() && !metadata.isSymbolicLink(), 'pre-matrix-receipt-unreadable');
+    bytes = await fs.promises.readFile(filename);
+  } catch {
+    inputFailure('pre-matrix-receipt-unreadable');
+  }
+  const identity = {
+    bytes: bytes.byteLength,
+    sha256: createHash('sha256').update(bytes).digest('hex'),
+  };
+  try {
+    return {
+      identity,
+      receipt: parseQwen3PreMatrixReceipt(JSON.parse(bytes.toString('utf8'))),
+    };
+  } catch {
+    inputFailure('pre-matrix-receipt-invalid');
   }
 };
 
@@ -318,8 +400,350 @@ const parseMatrixLimits = (value) => {
   };
 };
 
+const receiptFileIdentity = (value, failureCode) => {
+  const record = exactInputRecord(value, ['byteSize', 'sha256'], failureCode);
+  inputAssert(Number.isSafeInteger(record.byteSize) && record.byteSize >= 0, failureCode);
+  inputAssert(sha256Pattern.test(record.sha256), failureCode);
+  return { bytes: record.byteSize, sha256: record.sha256 };
+};
+
+const receiptRelativePath = (value, failureCode) => {
+  const relativePath = inputString(value, failureCode);
+  inputAssert(
+    relativePath !== '' && !path.isAbsolute(relativePath) && !relativePath.split('/').includes('..'),
+    failureCode,
+  );
+  return relativePath;
+};
+
+const parseReceiptRecords = (value, labels, failureCode) => {
+  inputAssert(Array.isArray(value) && value.length === labels.length, failureCode);
+  const records = value.map((entry) => {
+    const record = exactInputRecord(entry, ['byteSize', 'label', 'relativePath', 'sha256'], failureCode);
+    return {
+      identity: receiptFileIdentity({ byteSize: record.byteSize, sha256: record.sha256 }, failureCode),
+      label: inputString(record.label, failureCode),
+      relativePath: receiptRelativePath(record.relativePath, failureCode),
+    };
+  });
+  inputAssert(JSON.stringify(records.map((record) => record.label)) === JSON.stringify(labels), failureCode);
+  return records;
+};
+
+const parseReceiptLinkerEvidence = (value, failureCode) => {
+  const record = exactInputRecord(value, [
+    'cdHash',
+    'codeDirectory',
+    'minos',
+    'platform',
+    'teamIdentifier',
+    'uuid',
+  ], failureCode);
+  const codeDirectory = inputString(record.codeDirectory, failureCode);
+  const cdHash = inputString(record.cdHash, failureCode);
+  const minos = inputString(record.minos, failureCode);
+  const teamIdentifier = inputString(record.teamIdentifier, failureCode);
+  const uuid = inputString(record.uuid, failureCode);
+  inputAssert(/^[0-9a-f]{40}$/.test(cdHash), failureCode);
+  inputAssert(codeDirectory.includes('adhoc,linker-signed'), failureCode);
+  inputAssert(minos === '14.5', failureCode);
+  inputAssert(record.platform === 1, failureCode);
+  inputAssert(teamIdentifier === 'not set', failureCode);
+  inputAssert(/^[0-9A-F]{8}(?:-[0-9A-F]{4}){3}-[0-9A-F]{12}$/.test(uuid), failureCode);
+  return { cdHash, codeDirectory, minos, platform: record.platform, teamIdentifier, uuid };
+};
+
+const parseReceiptProducerEvidence = (value, failureCode) => {
+  const record = exactInputRecord(value, [
+    'cmakeGenerator',
+    'finalLinkOutputPath',
+    'linkOutputPath',
+    'normalizedFinalLinkCommandSha256',
+    'preset',
+  ], failureCode);
+  const cmakeGenerator = inputString(record.cmakeGenerator, failureCode);
+  const finalLinkOutputPath = inputString(record.finalLinkOutputPath, failureCode);
+  const linkOutputPath = inputString(record.linkOutputPath, failureCode);
+  const normalizedFinalLinkCommandSha256 = inputString(record.normalizedFinalLinkCommandSha256, failureCode);
+  const preset = inputString(record.preset, failureCode);
+  inputAssert(cmakeGenerator === rawLinkerIdentityContract.producer.cmakeGenerator, failureCode);
+  inputAssert(finalLinkOutputPath === rawLinkerIdentityContract.producer.finalLinkOutputPath, failureCode);
+  inputAssert(linkOutputPath === rawLinkerIdentityContract.producer.finalLinkOutputPath, failureCode);
+  inputAssert(preset === rawLinkerIdentityContract.producer.preset, failureCode);
+  inputAssert(sha256Pattern.test(normalizedFinalLinkCommandSha256), failureCode);
+  return {
+    cmakeGenerator,
+    finalLinkOutputPath,
+    linkOutputPath,
+    normalizedFinalLinkCommandSha256,
+    preset,
+  };
+};
+
+const parseReceiptToolchainEvidence = (value, failureCode) => {
+  const record = exactInputRecord(value, [
+    'architecture',
+    'cCompiler',
+    'cxxCompiler',
+    'cxxCompilerVersion',
+    'deploymentTarget',
+    'ninjaVersion',
+  ], failureCode);
+  const architecture = inputString(record.architecture, failureCode);
+  const cCompiler = inputString(record.cCompiler, failureCode);
+  const cxxCompiler = inputString(record.cxxCompiler, failureCode);
+  const cxxCompilerVersion = inputString(record.cxxCompilerVersion, failureCode);
+  const deploymentTarget = inputString(record.deploymentTarget, failureCode);
+  const ninjaVersion = inputString(record.ninjaVersion, failureCode);
+  inputAssert(architecture === 'arm64', failureCode);
+  inputAssert(cCompiler === '/usr/bin/cc', failureCode);
+  inputAssert(cxxCompiler === '/usr/bin/c++', failureCode);
+  inputAssert(cxxCompilerVersion.startsWith('Apple clang version '), failureCode);
+  inputAssert(deploymentTarget === '14.5', failureCode);
+  inputAssert(/^\d+\.\d+(?:\.\d+)?$/.test(ninjaVersion), failureCode);
+  return { architecture, cCompiler, cxxCompiler, cxxCompilerVersion, deploymentTarget, ninjaVersion };
+};
+
+const parseReceiptEnvironmentEvidence = (value, failureCode) => {
+  const record = exactInputRecord(value, [
+    'allProxy',
+    'fetchContentSourceDirIspoLlamacpp',
+    'gitTerminalPrompt',
+    'home',
+    'httpProxy',
+    'httpsProxy',
+    'huggingFaceToken',
+    'npmCache',
+    'path',
+  ], failureCode);
+  const environment = {};
+  for (const key of Object.keys(record)) {
+    environment[key] = inputString(record[key], failureCode);
+  }
+  inputAssert(environment.allProxy === 'unset', failureCode);
+  inputAssert(environment.fetchContentSourceDirIspoLlamacpp === 'unset', failureCode);
+  inputAssert(environment.gitTerminalPrompt === '0', failureCode);
+  inputAssert(environment.home === 'isolated-empty', failureCode);
+  inputAssert(environment.httpProxy === 'unset', failureCode);
+  inputAssert(environment.httpsProxy === 'unset', failureCode);
+  inputAssert(environment.huggingFaceToken === 'unset', failureCode);
+  inputAssert(environment.npmCache === 'isolated-empty', failureCode);
+  inputAssert(environment.path === '/opt/homebrew/bin:/usr/bin:/bin:/usr/sbin:/sbin', failureCode);
+  return environment;
+};
+
+const readRawLinkerEvidence = (addonPath) => {
+  const loadCommands = spawnSync('/usr/bin/otool', ['-l', addonPath], {
+    encoding: 'utf8',
+    env: subprocessEnvironment,
+    stdio: ['ignore', 'pipe', 'ignore'],
+  });
+  inputAssert(loadCommands.error === undefined && loadCommands.status === 0, 'raw-linker-evidence-unreadable');
+  const uuid = /^\s*uuid ([0-9A-F-]+)$/m.exec(loadCommands.stdout)?.[1];
+  const platform = /^\s*platform (\d+)$/m.exec(loadCommands.stdout)?.[1];
+  const minos = /^\s*minos ([0-9.]+)$/m.exec(loadCommands.stdout)?.[1];
+  const signature = spawnSync('/usr/bin/codesign', ['-d', '--verbose=4', addonPath], {
+    encoding: 'utf8',
+    env: subprocessEnvironment,
+    stdio: ['ignore', 'pipe', 'pipe'],
+  });
+  inputAssert(signature.error === undefined && signature.status === 0, 'raw-linker-evidence-unreadable');
+  const details = `${signature.stdout}${signature.stderr}`;
+  const codeDirectory = /^CodeDirectory (.+)$/m.exec(details)?.[1];
+  const cdHash = /^CDHash=([a-f0-9]+)$/m.exec(details)?.[1];
+  const teamIdentifier = /^TeamIdentifier=(.+)$/m.exec(details)?.[1];
+  inputAssert(uuid !== undefined && platform !== undefined && minos !== undefined,
+    'raw-linker-evidence-unreadable');
+  inputAssert(codeDirectory !== undefined && cdHash !== undefined && teamIdentifier !== undefined,
+    'raw-linker-evidence-unreadable');
+  return parseReceiptLinkerEvidence({
+    cdHash,
+    codeDirectory,
+    minos,
+    platform: Number(platform),
+    teamIdentifier,
+    uuid,
+  }, 'raw-linker-evidence-invalid');
+};
+
+const receiptRecordIdentity = (records, label, failureCode) => {
+  const record = records.find((candidate) => candidate.label === label);
+  inputAssert(record !== undefined, failureCode);
+  return record.identity;
+};
+
+const parseReceiptUpstream = (value, failureCode) => {
+  const record = exactInputRecord(value, ['archive', 'license', 'patch'], failureCode);
+  const archiveRecord = exactInputRecord(record.archive, ['byteSize', 'revision', 'sha256'], failureCode);
+  const archive = receiptFileIdentity({
+    byteSize: archiveRecord.byteSize,
+    sha256: archiveRecord.sha256,
+  }, failureCode);
+  const revision = inputString(archiveRecord.revision, failureCode);
+  inputAssert(sourceHeadPattern.test(revision), failureCode);
+  return {
+    archive,
+    license: receiptFileIdentity(record.license, failureCode),
+    patch: receiptFileIdentity(record.patch, failureCode),
+    revision,
+  };
+};
+
+const parseQwen3PreMatrixReceipt = (value) => {
+  const record = exactInputRecord(value, [
+    'artifacts',
+    'binding',
+    'environment',
+    'freshPublicRoots',
+    'inputs',
+    'linker',
+    'producer',
+    'rawLinkerIdentity',
+    'schemaVersion',
+    'source',
+    'toolchain',
+    'upstream',
+  ], 'pre-matrix-receipt-invalid');
+  inputAssert(record.schemaVersion === preMatrixReceiptContract.schemaVersion, 'pre-matrix-receipt-invalid');
+  inputAssert(record.freshPublicRoots === 2, 'pre-matrix-receipt-invalid');
+  const artifacts = exactInputRecord(record.artifacts, ['production', 'test'], 'pre-matrix-receipt-invalid');
+  const source = exactInputRecord(record.source, [
+    'branch',
+    'implementationHead',
+    'reviewBase',
+    'reviewHead',
+  ], 'pre-matrix-receipt-invalid');
+  const binding = exactInputRecord(record.binding, [
+    'limits',
+    'model',
+    'qwenLicense',
+    'reviewBase',
+    'signedAddon',
+    'sourceImplementationHead',
+    'sourceReviewHead',
+  ], 'pre-matrix-receipt-invalid');
+  const parsedSource = {
+    branch: inputString(source.branch, 'pre-matrix-receipt-invalid'),
+    implementationHead: inputString(source.implementationHead, 'pre-matrix-receipt-invalid'),
+    reviewBase: inputString(source.reviewBase, 'pre-matrix-receipt-invalid'),
+    reviewHead: inputString(source.reviewHead, 'pre-matrix-receipt-invalid'),
+  };
+  inputAssert(parsedSource.branch === qwen3SourceIdentity.proposalBranch, 'pre-matrix-receipt-invalid');
+  inputAssert(sourceHeadPattern.test(parsedSource.implementationHead), 'pre-matrix-receipt-invalid');
+  inputAssert(sourceHeadPattern.test(parsedSource.reviewHead), 'pre-matrix-receipt-invalid');
+  inputAssert(parsedSource.reviewBase === qwen3SourceIdentity.reviewBase, 'pre-matrix-receipt-invalid');
+  inputAssert(binding.reviewBase === parsedSource.reviewBase, 'pre-matrix-receipt-invalid');
+  inputAssert(binding.sourceImplementationHead === parsedSource.implementationHead, 'pre-matrix-receipt-invalid');
+  inputAssert(binding.sourceReviewHead === parsedSource.reviewHead, 'pre-matrix-receipt-invalid');
+  const parsed = {
+    artifacts: {
+      production: parseReceiptRecords(
+        artifacts.production,
+        preMatrixReceiptContract.artifactLabels,
+        'pre-matrix-receipt-invalid',
+      ),
+      test: parseReceiptRecords(
+        artifacts.test,
+        preMatrixReceiptContract.artifactLabels,
+        'pre-matrix-receipt-invalid',
+      ),
+    },
+    binding: {
+      limits: parseMatrixLimits(binding.limits),
+      model: receiptFileIdentity(binding.model, 'pre-matrix-receipt-invalid'),
+      qwenLicense: receiptFileIdentity(binding.qwenLicense, 'pre-matrix-receipt-invalid'),
+      signedAddon: parseSignedAddon(binding.signedAddon),
+    },
+    environment: parseReceiptEnvironmentEvidence(record.environment, 'pre-matrix-receipt-invalid'),
+    inputs: parseReceiptRecords(
+      record.inputs,
+      preMatrixReceiptContract.inputLabels,
+      'pre-matrix-receipt-invalid',
+    ),
+    linker: parseReceiptLinkerEvidence(record.linker, 'pre-matrix-receipt-invalid'),
+    producer: parseReceiptProducerEvidence(record.producer, 'pre-matrix-receipt-invalid'),
+    rawLinkerIdentity: parseRawLinkerIdentity(record.rawLinkerIdentity),
+    source: parsedSource,
+    toolchain: parseReceiptToolchainEvidence(record.toolchain, 'pre-matrix-receipt-invalid'),
+    upstream: parseReceiptUpstream(record.upstream, 'pre-matrix-receipt-invalid'),
+  };
+  inputAssert(parsed.rawLinkerIdentity.forkHead === parsed.source.implementationHead,
+    'pre-matrix-receipt-invalid');
+  inputAssert(
+    parsed.rawLinkerIdentity.producer.cmakeGenerator === parsed.producer.cmakeGenerator &&
+      parsed.rawLinkerIdentity.producer.finalLinkOutputPath === parsed.producer.finalLinkOutputPath &&
+      parsed.rawLinkerIdentity.producer.preset === parsed.producer.preset,
+    'pre-matrix-receipt-invalid',
+  );
+  inputAssert(
+    sameFileIdentity(receiptRecordIdentity(parsed.artifacts.production, 'raw-addon', 'pre-matrix-receipt-invalid'),
+      qwen3NativeArtifactIdentity.productionAddon),
+    'pre-matrix-receipt-invalid',
+  );
+  inputAssert(
+    sameFileIdentity(receiptRecordIdentity(parsed.artifacts.test, 'raw-addon', 'pre-matrix-receipt-invalid'),
+      qwen3NativeArtifactIdentity.testAddon),
+    'pre-matrix-receipt-invalid',
+  );
+  inputAssert(parsed.rawLinkerIdentity.sha256 === qwen3NativeArtifactIdentity.productionAddon.sha256,
+    'pre-matrix-receipt-invalid');
+  inputAssert(sameFileIdentity(parsed.binding.model, qwen3ModelIdentity), 'pre-matrix-receipt-invalid');
+  inputAssert(sameFileIdentity(parsed.binding.qwenLicense, qwen3LicenseIdentity), 'pre-matrix-receipt-invalid');
+  inputAssert(parsed.upstream.revision === qwen3UpstreamIdentity.revision, 'pre-matrix-receipt-invalid');
+  inputAssert(sameFileIdentity(parsed.upstream.archive, {
+    bytes: qwen3UpstreamIdentity.archiveBytes,
+    sha256: qwen3UpstreamIdentity.archiveSha256,
+  }),
+    'pre-matrix-receipt-invalid');
+  inputAssert(sameFileIdentity(parsed.upstream.license, {
+    bytes: qwen3UpstreamIdentity.licenseBytes,
+    sha256: qwen3UpstreamIdentity.licenseSha256,
+  }),
+    'pre-matrix-receipt-invalid');
+  inputAssert(sameFileIdentity(parsed.upstream.patch, {
+    bytes: qwen3UpstreamIdentity.patchBytes,
+    sha256: qwen3UpstreamIdentity.patchSha256,
+  }),
+    'pre-matrix-receipt-invalid');
+  inputAssert(
+    sameFileIdentity(receiptRecordIdentity(parsed.inputs, 'upstream-archive', 'pre-matrix-receipt-invalid'),
+      parsed.upstream.archive),
+    'pre-matrix-receipt-invalid',
+  );
+  inputAssert(
+    sameFileIdentity(receiptRecordIdentity(parsed.inputs, 'upstream-license', 'pre-matrix-receipt-invalid'),
+      parsed.upstream.license),
+    'pre-matrix-receipt-invalid',
+  );
+  inputAssert(
+    sameFileIdentity(receiptRecordIdentity(parsed.inputs, 'upstream-patch', 'pre-matrix-receipt-invalid'),
+      parsed.upstream.patch),
+    'pre-matrix-receipt-invalid',
+  );
+  inputAssert(JSON.stringify(parsed.binding.limits) === JSON.stringify(qwen3MatrixLimits),
+    'pre-matrix-receipt-invalid');
+  return parsed;
+};
+
 const validateExactInputBindings = (candidate) => {
-  const source = exactInputRecord(candidate.source, [
+  const record = exactInputRecord(candidate, [
+    'declaredMatrixScript',
+    'declaredPreMatrixReceipt',
+    'license',
+    'limits',
+    'linker',
+    'matrixScript',
+    'model',
+    'preMatrixReceipt',
+    'productionAddon',
+    'rawAddon',
+    'rawLinker',
+    'signedAddon',
+    'source',
+    'testAddon',
+    'upstream',
+  ], 'matrix-input-bindings-invalid');
+  const source = exactInputRecord(record.source, [
     'declaredImplementationHead',
     'declaredReviewHead',
     'implementationHead',
@@ -330,17 +754,32 @@ const validateExactInputBindings = (candidate) => {
     inputAssert(sourceHeadPattern.test(inputString(source[key], 'source-evidence-invalid')),
       'source-evidence-invalid');
   }
-  const rawLinker = parseRawLinkerIdentity(candidate.rawLinker);
-  const productionAddon = boundedFileIdentity(candidate.productionAddon, 'production-addon-invalid');
-  const rawAddon = boundedFileIdentity(candidate.rawAddon, 'raw-addon-invalid');
-  const signedAddon = parseSignedAddon(candidate.signedAddon);
-  const testAddon = boundedFileIdentity(candidate.testAddon, 'test-addon-invalid');
-  const model = boundedFileIdentity(candidate.model, 'model-identity-invalid');
-  const license = boundedFileIdentity(candidate.license, 'license-identity-invalid');
-  const upstream = parseUpstreamEvidence(candidate.upstream);
-  const matrixScript = boundedFileIdentity(candidate.matrixScript, 'matrix-script-invalid');
-  const declaredMatrixScript = boundedFileIdentity(candidate.declaredMatrixScript, 'matrix-script-invalid');
-  const limits = parseMatrixLimits(candidate.limits);
+  const rawLinker = parseRawLinkerIdentity(record.rawLinker);
+  const productionAddon = boundedFileIdentity(record.productionAddon, 'production-addon-invalid');
+  const rawAddon = boundedFileIdentity(record.rawAddon, 'raw-addon-invalid');
+  const signedAddon = parseSignedAddon(record.signedAddon);
+  const testAddon = boundedFileIdentity(record.testAddon, 'test-addon-invalid');
+  const model = boundedFileIdentity(record.model, 'model-identity-invalid');
+  const license = boundedFileIdentity(record.license, 'license-identity-invalid');
+  const upstream = parseUpstreamEvidence(record.upstream);
+  const matrixScript = boundedFileIdentity(record.matrixScript, 'matrix-script-invalid');
+  const declaredMatrixScript = boundedFileIdentity(record.declaredMatrixScript, 'matrix-script-invalid');
+  const declaredPreMatrixReceipt = boundedFileIdentity(
+    record.declaredPreMatrixReceipt,
+    'pre-matrix-receipt-identity-invalid',
+  );
+  const preMatrixReceiptRecord = exactInputRecord(
+    record.preMatrixReceipt,
+    ['identity', 'receipt'],
+    'pre-matrix-receipt-invalid',
+  );
+  const preMatrixReceiptIdentity = boundedFileIdentity(
+    preMatrixReceiptRecord.identity,
+    'pre-matrix-receipt-identity-invalid',
+  );
+  const preMatrixReceipt = parseQwen3PreMatrixReceipt(preMatrixReceiptRecord.receipt);
+  const linker = parseReceiptLinkerEvidence(record.linker, 'raw-linker-evidence-invalid');
+  const limits = parseMatrixLimits(record.limits);
 
   inputAssert(source.declaredImplementationHead === source.implementationHead,
     'source-implementation-head-mismatch');
@@ -349,6 +788,10 @@ const validateExactInputBindings = (candidate) => {
   inputAssert(source.reviewBase === qwen3SourceIdentity.reviewBase, 'source-review-lineage-invalid');
   inputAssert(rawLinker.forkHead === source.implementationHead, 'raw-linker-source-head-mismatch');
   inputAssert(rawLinker.sha256 === rawAddon.sha256, 'raw-linker-identity-mismatch');
+  inputAssert(sameFileIdentity(productionAddon, qwen3NativeArtifactIdentity.productionAddon),
+    'production-addon-identity-mismatch');
+  inputAssert(sameFileIdentity(testAddon, qwen3NativeArtifactIdentity.testAddon),
+    'test-addon-identity-mismatch');
   if (signedAddon.state === 'not-applicable') {
     inputAssert(sameFileIdentity(productionAddon, rawAddon), 'raw-production-addon-mismatch');
   } else {
@@ -357,11 +800,56 @@ const validateExactInputBindings = (candidate) => {
   inputAssert(sameFileIdentity(model, qwen3ModelIdentity), 'model-identity-mismatch');
   inputAssert(sameFileIdentity(license, qwen3LicenseIdentity), 'license-identity-mismatch');
   inputAssert(upstream.revision === qwen3UpstreamIdentity.revision, 'upstream-revision-mismatch');
-  inputAssert(upstream.archive.sha256 === qwen3UpstreamIdentity.archiveSha256, 'upstream-archive-mismatch');
-  inputAssert(upstream.license.sha256 === qwen3UpstreamIdentity.licenseSha256, 'upstream-license-mismatch');
-  inputAssert(upstream.patch.sha256 === qwen3UpstreamIdentity.patchSha256, 'upstream-patch-mismatch');
+  inputAssert(sameFileIdentity(upstream.archive, {
+    bytes: qwen3UpstreamIdentity.archiveBytes,
+    sha256: qwen3UpstreamIdentity.archiveSha256,
+  }), 'upstream-archive-mismatch');
+  inputAssert(sameFileIdentity(upstream.license, {
+    bytes: qwen3UpstreamIdentity.licenseBytes,
+    sha256: qwen3UpstreamIdentity.licenseSha256,
+  }), 'upstream-license-mismatch');
+  inputAssert(sameFileIdentity(upstream.patch, {
+    bytes: qwen3UpstreamIdentity.patchBytes,
+    sha256: qwen3UpstreamIdentity.patchSha256,
+  }), 'upstream-patch-mismatch');
   inputAssert(sameFileIdentity(matrixScript, declaredMatrixScript), 'matrix-script-identity-mismatch');
   inputAssert(JSON.stringify(limits) === JSON.stringify(qwen3MatrixLimits), 'matrix-limits-mismatch');
+  inputAssert(sameFileIdentity(preMatrixReceiptIdentity, declaredPreMatrixReceipt),
+    'pre-matrix-receipt-identity-mismatch');
+  inputAssert(
+    source.implementationHead === preMatrixReceipt.source.implementationHead &&
+      source.reviewHead === preMatrixReceipt.source.reviewHead &&
+      source.reviewBase === preMatrixReceipt.source.reviewBase,
+    'pre-matrix-receipt-source-mismatch',
+  );
+  inputAssert(JSON.stringify(rawLinker) === JSON.stringify(preMatrixReceipt.rawLinkerIdentity),
+    'pre-matrix-receipt-raw-linker-mismatch');
+  inputAssert(JSON.stringify(linker) === JSON.stringify(preMatrixReceipt.linker),
+    'pre-matrix-receipt-linker-evidence-mismatch');
+  inputAssert(
+    sameFileIdentity(productionAddon,
+      receiptRecordIdentity(preMatrixReceipt.artifacts.production, 'raw-addon', 'pre-matrix-receipt-invalid')),
+    'pre-matrix-receipt-production-addon-mismatch',
+  );
+  inputAssert(
+    sameFileIdentity(testAddon,
+      receiptRecordIdentity(preMatrixReceipt.artifacts.test, 'raw-addon', 'pre-matrix-receipt-invalid')),
+    'pre-matrix-receipt-test-addon-mismatch',
+  );
+  inputAssert(sameFileIdentity(model, preMatrixReceipt.binding.model), 'pre-matrix-receipt-model-mismatch');
+  inputAssert(sameFileIdentity(license, preMatrixReceipt.binding.qwenLicense),
+    'pre-matrix-receipt-license-mismatch');
+  inputAssert(JSON.stringify(upstream) === JSON.stringify(preMatrixReceipt.upstream),
+    'pre-matrix-receipt-upstream-mismatch');
+  inputAssert(
+    sameFileIdentity(matrixScript,
+      receiptRecordIdentity(preMatrixReceipt.inputs, 'matrix-script', 'pre-matrix-receipt-invalid')),
+    'pre-matrix-receipt-matrix-script-mismatch',
+  );
+  inputAssert(JSON.stringify(limits) === JSON.stringify(preMatrixReceipt.binding.limits),
+    'pre-matrix-receipt-limits-mismatch');
+  inputAssert(JSON.stringify(signedAddon) === JSON.stringify(preMatrixReceipt.binding.signedAddon),
+    'pre-matrix-receipt-signed-addon-mismatch');
 
   return {
     source: {
@@ -370,7 +858,11 @@ const validateExactInputBindings = (candidate) => {
       reviewHead: source.reviewHead,
     },
     rawLinker: {
+      artifactPath: rawLinker.artifactPath,
+      forkHead: rawLinker.forkHead,
+      producer: rawLinker.producer,
       reproducibility: rawLinker.reproducibility,
+      schemaVersion: rawLinker.schemaVersion,
       sha256: rawLinker.sha256,
       signatureState: rawLinker.signatureState,
       stage: rawLinker.stage,
@@ -386,14 +878,24 @@ const validateExactInputBindings = (candidate) => {
     upstream,
     matrixScript,
     limits,
+    preMatrixReceipt: {
+      environment: preMatrixReceipt.environment,
+      freshPublicRoots: 2,
+      identity: preMatrixReceiptIdentity,
+      linker,
+      producer: preMatrixReceipt.producer,
+      toolchain: preMatrixReceipt.toolchain,
+    },
   };
 };
 
 const captureExactInputBindings = async ({
   addonPath,
   declaredMatrixScript,
+  declaredPreMatrixReceipt,
   licensePath,
   modelPath,
+  preMatrixReceiptPath,
   rawAddonPath,
   rawLinkerIdentityPath,
   signedAddonPath,
@@ -410,6 +912,8 @@ const captureExactInputBindings = async ({
   const license = await captureFileIdentity(licensePath, 'license-unreadable');
   const rawAddon = await captureFileIdentity(rawAddonPath, 'raw-addon-unreadable');
   const rawLinker = await readRawLinkerIdentity(rawLinkerIdentityPath);
+  const preMatrixReceipt = await readPreMatrixReceipt(preMatrixReceiptPath);
+  const linker = readRawLinkerEvidence(addonPath);
   const source = readSourceFacts();
   const upstream = {
     archive: await captureFileIdentity(upstreamArchivePath, 'upstream-archive-unreadable'),
@@ -423,10 +927,12 @@ const captureExactInputBindings = async ({
     : { identity: await captureFileIdentity(signedAddonPath, 'signed-addon-unreadable'), state: 'present' };
   return validateExactInputBindings({
     declaredMatrixScript,
+    declaredPreMatrixReceipt,
     license,
     limits: qwen3MatrixLimits,
     matrixScript,
     model,
+    preMatrixReceipt,
     productionAddon,
     rawAddon,
     rawLinker,
@@ -437,6 +943,7 @@ const captureExactInputBindings = async ({
       ...source,
     },
     testAddon,
+    linker,
     upstream,
   });
 };
@@ -690,7 +1197,7 @@ const prompt = ${JSON.stringify(qwen3Prompt)};
 };
 
 const parseArguments = (argumentsList) => {
-  if (argumentsList.length !== 17) throw new Error('Qwen3 matrix arguments are invalid');
+  if (argumentsList.length !== 20) throw new Error('Qwen3 matrix arguments are invalid');
   const [
     addonPath,
     testAddonPath,
@@ -706,6 +1213,9 @@ const parseArguments = (argumentsList) => {
     signedAddonArgument,
     matrixScriptBytes,
     matrixScriptSha256,
+    preMatrixReceiptPath,
+    preMatrixReceiptBytes,
+    preMatrixReceiptSha256,
     outputPath,
     logPath,
     receiptPath,
@@ -720,6 +1230,7 @@ const parseArguments = (argumentsList) => {
     upstreamArchivePath,
     upstreamLicensePath,
     upstreamPatchPath,
+    preMatrixReceiptPath,
     outputPath,
     logPath,
     receiptPath,
@@ -729,12 +1240,19 @@ const parseArguments = (argumentsList) => {
   if (
     !sourceHeadPattern.test(sourceImplementationHead) ||
     !sourceHeadPattern.test(sourceReviewHead) ||
-    !sha256Pattern.test(matrixScriptSha256)
+    !sha256Pattern.test(matrixScriptSha256) ||
+    !sha256Pattern.test(preMatrixReceiptSha256)
   ) {
     throw new Error('Qwen3 matrix arguments are invalid');
   }
   const declaredMatrixScriptBytes = Number(matrixScriptBytes);
-  if (!Number.isSafeInteger(declaredMatrixScriptBytes) || declaredMatrixScriptBytes <= 0) {
+  const declaredPreMatrixReceiptBytes = Number(preMatrixReceiptBytes);
+  if (
+    !Number.isSafeInteger(declaredMatrixScriptBytes) ||
+    declaredMatrixScriptBytes <= 0 ||
+    !Number.isSafeInteger(declaredPreMatrixReceiptBytes) ||
+    declaredPreMatrixReceiptBytes <= 0
+  ) {
     throw new Error('Qwen3 matrix arguments are invalid');
   }
   const signedAddonPath = signedAddonArgument === 'not-applicable' ? null : signedAddonArgument;
@@ -744,10 +1262,15 @@ const parseArguments = (argumentsList) => {
   return {
     addonPath,
     declaredMatrixScript: { bytes: declaredMatrixScriptBytes, sha256: matrixScriptSha256 },
+    declaredPreMatrixReceipt: {
+      bytes: declaredPreMatrixReceiptBytes,
+      sha256: preMatrixReceiptSha256,
+    },
     licensePath,
     logPath,
     modelPath,
     outputPath,
+    preMatrixReceiptPath,
     rawAddonPath,
     rawLinkerIdentityPath,
     receiptPath,
@@ -974,8 +1497,11 @@ if (require.main === module) {
 module.exports = {
   expectedQwen3ChatPrompt,
   matrixCycles,
+  parseQwen3PreMatrixReceipt,
   parseRawLinkerIdentity,
+  preMatrixReceiptContract,
   qwen3MatrixLimits,
+  qwen3NativeArtifactIdentity,
   qwen3ContextTokens,
   qwen3LicenseIdentity,
   qwen3ModelIdentity,

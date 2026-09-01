@@ -86,12 +86,17 @@ node - "$canonical_pre_explicit_sign_sha256" "$canonical_pre_explicit_sign_stage
 
 const [sha256, stage, forkHead] = process.argv.slice(2);
 process.stdout.write(`${JSON.stringify({
-  schemaVersion: 2,
+  schemaVersion: 3,
   artifactPath: 'native/ispo_local_inference_native.node',
   forkHead,
+  producer: {
+    cmakeGenerator: 'Ninja',
+    finalLinkOutputPath: 'ispo/inference/ispo_local_inference_native.node',
+    preset: 'ispo-darwin-arm64-inference-release',
+  },
   reproducibility: {
     rawMachOUuid: 'content-derived',
-    staticArchiveMetadata: 'canonicalized',
+    staticArchiveMetadata: 'canonicalized-provenance',
   },
   stage,
   signatureState: 'linker-generated-ad-hoc',
@@ -147,11 +152,14 @@ const sha256 = (filename) => crypto.createHash('sha256').update(fs.readFileSync(
 const output = (command, commandArguments) => execFileSync(command, commandArguments, { encoding: 'utf8' }).trim();
 const canonicalPreExplicitSignIdentity = JSON.parse(fs.readFileSync(canonicalIdentityPath, 'utf8'));
 if (
-  canonicalPreExplicitSignIdentity.schemaVersion !== 2 ||
+  canonicalPreExplicitSignIdentity.schemaVersion !== 3 ||
   canonicalPreExplicitSignIdentity.artifactPath !== 'native/ispo_local_inference_native.node' ||
   !/^[0-9a-f]{40}$/.test(canonicalPreExplicitSignIdentity.forkHead) ||
+  canonicalPreExplicitSignIdentity.producer?.cmakeGenerator !== 'Ninja' ||
+  canonicalPreExplicitSignIdentity.producer?.finalLinkOutputPath !== 'ispo/inference/ispo_local_inference_native.node' ||
+  canonicalPreExplicitSignIdentity.producer?.preset !== 'ispo-darwin-arm64-inference-release' ||
   canonicalPreExplicitSignIdentity.reproducibility?.rawMachOUuid !== 'content-derived' ||
-  canonicalPreExplicitSignIdentity.reproducibility?.staticArchiveMetadata !== 'canonicalized' ||
+  canonicalPreExplicitSignIdentity.reproducibility?.staticArchiveMetadata !== 'canonicalized-provenance' ||
   canonicalPreExplicitSignIdentity.stage !== 'raw-linker-output-before-explicit-codesign' ||
   canonicalPreExplicitSignIdentity.signatureState !== 'linker-generated-ad-hoc' ||
   !/^[0-9a-f]{64}$/.test(canonicalPreExplicitSignIdentity.sha256)

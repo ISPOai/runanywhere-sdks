@@ -37,6 +37,7 @@
             "cacheVariables": {
                 "CMAKE_OSX_ARCHITECTURES": "arm64",
                 "CMAKE_OSX_DEPLOYMENT_TARGET": "14.5",
+                "ISPO_INFERENCE_CANONICAL_PRESET": "ispo-darwin-arm64-inference-release",
                 "RAC_ISPO_INFERENCE_ONLY": "ON",
                 "RAC_DESKTOP_ADAPTER": "OFF",
                 "RAC_BUILD_BACKENDS": "OFF",

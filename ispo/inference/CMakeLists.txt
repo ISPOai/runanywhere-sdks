@@ -2,6 +2,17 @@ cmake_minimum_required(VERSION 3.24)
 
 include(FetchContent)
 
+if(NOT CMAKE_GENERATOR STREQUAL "Ninja")
+    message(FATAL_ERROR "The ISPO Qwen3 inference artifact requires the Ninja generator")
+endif()
+if(NOT ISPO_INFERENCE_CANONICAL_PRESET STREQUAL "ispo-darwin-arm64-inference-release")
+    message(FATAL_ERROR "The ISPO Qwen3 inference artifact requires its canonical CMake preset")
+endif()
+if(NOT CMAKE_OSX_ARCHITECTURES STREQUAL "arm64" OR
+   NOT CMAKE_OSX_DEPLOYMENT_TARGET STREQUAL "14.5")
+    message(FATAL_ERROR "The ISPO Qwen3 inference artifact requires the arm64 macOS 14.5 toolchain")
+endif()
+
 set(ISPO_INFERENCE_LLAMA_REPOSITORY "https://github.com/RunanywhereAI/llama.cpp.git")
 set(ISPO_INFERENCE_LLAMA_REVISION "d3bd7193ba66c15963fd1c59448f22019a8caf6e")
 set(ISPO_INFERENCE_LLAMA_ARCHIVE
@@ -129,8 +140,10 @@ set_property(TARGET ispo_local_inference_native APPEND PROPERTY BUILD_RPATH "@lo
 set_target_properties(ispo_local_inference_native PROPERTIES INSTALL_RPATH "@loader_path")
 
 # Apple's ar records build time, uid, and gid in every archive member. Normalize
-# those post-object inputs before the final link so the linker's content-derived
-# LC_UUID and its automatic CodeDirectory reproduce across isolated roots.
+# those headers for canonical static-archive provenance. They are not the causal
+# raw-link input: Darwin ld incorporates its final `-o` spelling, so the
+# admission boundary separately binds the Ninja producer and canonical output
+# path before it accepts the content-derived LC_UUID or CodeDirectory.
 set(_ispo_static_archive_targets
     ispo_inference_core
     llama

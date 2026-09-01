@@ -710,17 +710,33 @@ category, and completion byte count; it records no model location, source
 identity, credential, or backend handle. Its model-free contract test rejects
 template changes and verifies cleanup on failure.
 
-Before the final Qwen3 matrix loads either addon, its receipt stream-hashes
-the production, raw, and test addons, the exact canonical GGUF, and the exact
-Apache-2.0 license text. It separately records the supplied source head and
-requires that head to agree with both the checked-out source and the
-linker-generated raw-addon identity. The receipt retains only those bounded
-hashes and byte counts; it contains no paths, model URLs, repository metadata,
-or native handles. The package producer carries the same source head in the
-raw-linker identity, input manifest, and SBOM property so a later signed
-candidate cannot relabel a raw result from another source head. Model-free
-matrix tests reject each source, raw-linker, model, license, and artifact
-identity mismatch before any native load.
+Before the final Qwen3 matrix loads either addon, it re-hashes an immutable
+pre-matrix receipt from exactly two fresh public roots. That receipt binds the
+production, raw, and test addons; direct objects; static archives; source and
+review heads; upstream archive, license, and patch; matrix script; exact
+canonical GGUF; immutable Apache-2.0 license text; context/backend limits; and
+the raw linker's LC_UUID and CodeDirectory evidence. It also records the
+canonical toolchain, normalized final link-command identity, and a sealed
+environment declaration (empty isolated home/cache and no proxy, Hub token, or
+local llama.cpp override). It retains bounded relative build paths only, never
+a model location, URL, credential, native handle, or user-store path.
+
+The historical raw divergence was caused by the final Darwin linker `-o`
+spelling, not archive-member headers: a basename-only Make-style output yields
+the historical raw identity while Ninja's
+`ispo/inference/ispo_local_inference_native.node` output yields the canonical
+identity. Archive normalization remains required canonical-provenance work,
+but is not evidence of the raw linker input. The producer therefore rejects
+non-Ninja generators and requires the canonical preset and final output-path
+form before admitting the content-derived LC_UUID or CodeDirectory. The matrix
+also independently rejects changed source, model, license, production/raw/test
+addon, signed-addon state, raw-linker producer, pre-matrix receipt,
+matrix-script, context, and backend evidence before any native load.
+
+The package producer carries the same source head and canonical producer
+identity in the raw-linker identity, input manifest, and SBOM property so a
+later signed candidate cannot relabel a raw result from another source or
+producer.
 
 The `.10` package inputs now name the new immutable source and helper tests;
 the SBOM's llama.cpp component follows the same archive receipt and the notice
