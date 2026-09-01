@@ -163,11 +163,13 @@ const parseRawLinkerIdentity = (value) => {
   inputAssert(sourceHeadPattern.test(record.forkHead), 'raw-linker-identity-invalid');
   inputAssert(sha256Pattern.test(record.sha256), 'raw-linker-identity-invalid');
   return {
+    artifactPath: record.artifactPath,
     forkHead: record.forkHead,
     reproducibility: {
       rawMachOUuid: reproducibility.rawMachOUuid,
       staticArchiveMetadata: reproducibility.staticArchiveMetadata,
     },
+    schemaVersion: record.schemaVersion,
     sha256: record.sha256,
     signatureState: record.signatureState,
     stage: record.stage,

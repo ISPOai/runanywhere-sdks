@@ -99,11 +99,13 @@ const main = async () => {
   assert(qwen3Prompt === 'Reply with exactly one word.', 'Qwen3 bounded prompt changed');
 
   assert(exactJson(parseRawLinkerIdentity(rawLinker)) === exactJson({
+    artifactPath: 'native/ispo_local_inference_native.node',
     forkHead: sourceHead,
     reproducibility: {
       rawMachOUuid: 'content-derived',
       staticArchiveMetadata: 'canonicalized',
     },
+    schemaVersion: 2,
     sha256: productionAddon.sha256,
     signatureState: 'linker-generated-ad-hoc',
     stage: 'raw-linker-output-before-explicit-codesign',
@@ -137,6 +139,11 @@ const main = async () => {
     matrixScript,
     limits: qwen3MatrixLimits,
   }), 'matrix receipt did not retain every exact input identity');
+
+  assert(exactJson(validateExactInputBindings(candidateFor({
+    rawLinker: parseRawLinkerIdentity(rawLinker),
+  }))) === exactJson(inputBindings),
+  'matrix input capture cannot revalidate its normalized raw-linker identity');
 
   expectInputFailure(candidateFor({
     source: { ...source, declaredImplementationHead: 'e'.repeat(40) },
