@@ -50,6 +50,8 @@ FetchContent_Declare(ispo_llamacpp
     PATCH_COMMAND patch --batch --forward -p1 -i "${ISPO_INFERENCE_LLAMA_PATCH}")
 FetchContent_MakeAvailable(ispo_llamacpp)
 
+find_program(ISPO_NODE_EXECUTABLE node REQUIRED)
+
 # Keep only code reached by the sealed adapter. This removes diagnostic/help
 # strings and dormant model-family helpers from the final Mach-O, rather than
 # merely hiding their exports.
@@ -125,5 +127,30 @@ target_link_options(ispo_local_inference_native PRIVATE
     "-Wl,-exported_symbols_list,${CMAKE_CURRENT_SOURCE_DIR}/native/exported-symbols.txt")
 set_property(TARGET ispo_local_inference_native APPEND PROPERTY BUILD_RPATH "@loader_path")
 set_target_properties(ispo_local_inference_native PROPERTIES INSTALL_RPATH "@loader_path")
+
+# Apple's ar records build time, uid, and gid in every archive member. Normalize
+# those post-object inputs before the final link so the linker's content-derived
+# LC_UUID and its automatic CodeDirectory reproduce across isolated roots.
+set(_ispo_static_archive_targets
+    ispo_inference_core
+    llama
+    ggml
+    ggml-base
+    ggml-cpu
+    ggml-blas
+    ggml-metal)
+add_custom_target(ispo_normalize_static_archives
+    COMMAND "${ISPO_NODE_EXECUTABLE}"
+        "${CMAKE_CURRENT_SOURCE_DIR}/scripts/normalize-darwin-static-archive.js"
+        "$<TARGET_FILE:ispo_inference_core>"
+        "$<TARGET_FILE:llama>"
+        "$<TARGET_FILE:ggml>"
+        "$<TARGET_FILE:ggml-base>"
+        "$<TARGET_FILE:ggml-cpu>"
+        "$<TARGET_FILE:ggml-blas>"
+        "$<TARGET_FILE:ggml-metal>"
+    DEPENDS ${_ispo_static_archive_targets}
+    VERBATIM)
+add_dependencies(ispo_local_inference_native ispo_normalize_static_archives)
 
 message(STATUS "ISPO local inference: direct core + static Qwen3 llama.cpp + N-API adapter only")

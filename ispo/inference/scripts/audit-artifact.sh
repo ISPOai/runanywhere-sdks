@@ -15,6 +15,10 @@ if ! otool -l "$addon" | grep -A 3 'LC_BUILD_VERSION' | grep -F 'minos 14.5' >/d
     echo "artifact deployment target is not macOS 14.5" >&2
     exit 65
 fi
+if [[ "$(otool -l "$addon" | grep -Fc 'LC_UUID')" -ne 1 ]]; then
+    echo "artifact did not retain one content-derived linker UUID" >&2
+    exit 65
+fi
 if ! nm "$addon" | grep -F '_ggml_metallib_start' >/dev/null; then
     echo "embedded Metal resource is absent" >&2
     exit 65

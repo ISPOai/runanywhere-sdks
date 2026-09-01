@@ -59,6 +59,8 @@ if [[ ! -f "$llama_source/LICENSE" || ! -f "$addon" ]]; then
     exit 65
 fi
 
+node "$repo_root/ispo/inference/scripts/verify-deterministic-darwin-build-inputs.js" \
+    "$build_dir" "$addon"
 "$repo_root/ispo/inference/scripts/audit-artifact.sh" "$addon"
 codesign --verify --strict --verbose=4 "$addon"
 node "$repo_root/ispo/inference/scripts/verify-production-exports.js" "$addon"
@@ -84,9 +86,13 @@ node - "$canonical_pre_explicit_sign_sha256" "$canonical_pre_explicit_sign_stage
 
 const [sha256, stage, forkHead] = process.argv.slice(2);
 process.stdout.write(`${JSON.stringify({
-  schemaVersion: 1,
+  schemaVersion: 2,
   artifactPath: 'native/ispo_local_inference_native.node',
   forkHead,
+  reproducibility: {
+    rawMachOUuid: 'content-derived',
+    staticArchiveMetadata: 'canonicalized',
+  },
   stage,
   signatureState: 'linker-generated-ad-hoc',
   sha256,
@@ -141,9 +147,11 @@ const sha256 = (filename) => crypto.createHash('sha256').update(fs.readFileSync(
 const output = (command, commandArguments) => execFileSync(command, commandArguments, { encoding: 'utf8' }).trim();
 const canonicalPreExplicitSignIdentity = JSON.parse(fs.readFileSync(canonicalIdentityPath, 'utf8'));
 if (
-  canonicalPreExplicitSignIdentity.schemaVersion !== 1 ||
+  canonicalPreExplicitSignIdentity.schemaVersion !== 2 ||
   canonicalPreExplicitSignIdentity.artifactPath !== 'native/ispo_local_inference_native.node' ||
   !/^[0-9a-f]{40}$/.test(canonicalPreExplicitSignIdentity.forkHead) ||
+  canonicalPreExplicitSignIdentity.reproducibility?.rawMachOUuid !== 'content-derived' ||
+  canonicalPreExplicitSignIdentity.reproducibility?.staticArchiveMetadata !== 'canonicalized' ||
   canonicalPreExplicitSignIdentity.stage !== 'raw-linker-output-before-explicit-codesign' ||
   canonicalPreExplicitSignIdentity.signatureState !== 'linker-generated-ad-hoc' ||
   !/^[0-9a-f]{64}$/.test(canonicalPreExplicitSignIdentity.sha256)
@@ -216,11 +224,13 @@ const sourceInputs = [
   'ispo/inference/patches/llama-static-backend-registry.patch',
   'ispo/inference/scripts/audit-artifact.sh',
   'ispo/inference/scripts/fetch-cyclonedx-1.5-schema.sh',
+  'ispo/inference/scripts/normalize-darwin-static-archive.js',
   'ispo/inference/scripts/package-development-darwin-arm64.sh',
   'ispo/inference/scripts/package-darwin-arm64.sh',
   'ispo/inference/scripts/run-qwen3-admission-matrix.js',
   'ispo/inference/scripts/run-qwen3-conformance.js',
   'ispo/inference/scripts/test-executor-quiescence.js',
+  'ispo/inference/scripts/test-normalize-darwin-static-archive.js',
   'ispo/inference/scripts/test-qwen3-admission-matrix.js',
   'ispo/inference/scripts/test-qwen3-conformance.js',
   'ispo/inference/scripts/test-verify-package-no-weights.js',
@@ -228,6 +238,7 @@ const sourceInputs = [
   'ispo/inference/scripts/verify-package-no-weights.js',
   'ispo/inference/scripts/verify-production-exports.js',
   'ispo/inference/scripts/validate-cyclonedx-sbom.js',
+  'ispo/inference/scripts/verify-deterministic-darwin-build-inputs.js',
 ].map(sourceFile);
 const licenseHashes = [
   { name: 'RunAnywhere SDK source', path: 'LICENSE', sha256: sha256(path.join(repositoryRoot, 'LICENSE')) },
