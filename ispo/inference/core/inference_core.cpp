@@ -11,7 +11,7 @@
 #include "llama.h"
 
 #if defined(ISPO_INFERENCE_TESTING)
-#include "ggml-metal-impl.h"
+extern "C" bool ggml_metal_ispo_static_residency_disabled_for_test(void);
 #endif
 
 namespace ispo::inference {
