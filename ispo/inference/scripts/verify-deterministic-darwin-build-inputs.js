@@ -94,7 +94,6 @@ const normalizeFinalLinkCommand = (linkCommand, buildDirectory, sourceDirectory)
   linkCommand.split(buildDirectory).join('<build>').split(sourceDirectory).join('<source>');
 
 const validateCanonicalProducerEvidence = (evidence) => {
-  assert(evidence !== null && typeof evidence === 'object', 'build producer evidence was invalid');
   assert(evidence.cmakeGenerator === canonicalProducer.cmakeGenerator,
     'build did not use the canonical Ninja generator');
   assert(evidence.preset === canonicalProducer.preset,
